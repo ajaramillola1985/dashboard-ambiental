@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Ambiental – Biodiversidad y Vegetación</title>
+
+  <!-- Librerías externas (se cargan desde internet, no hay que instalar nada) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* ====== ESTILOS (apariencia) ====== */
+    :root {
+      --verde: #2e7d32;
+      --verde-claro: #e8f5e9;
+      --gris: #f4f6f4;
+      --texto: #1f2a1f;
+      --borde: #d5ddd5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      color: var(--texto);
+      background: var(--gris);
+    }
+    header {
+      background: var(--verde);
+      color: white;
+      padding: 14px 20px;
+    }
+    header h1 { margin: 0; font-size: 1.3rem; }
+    header p  { margin: 4px 0 0; font-size: .9rem; opacity: .9; }
+
+    .contenedor {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 14px;
+      padding: 14px;
+    }
+    @media (max-width: 900px) { .contenedor { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: white;
+      border: 1px solid var(--borde);
+      border-radius: 10px;
+      padding: 14px;
+    }
+    .panel h2 { font-size: 1rem; margin: 0 0 10px; color: var(--verde); }
+
+    label { display: block; font-size: .85rem; margin: 10px 0 4px; font-weight: 600; }
+    input, select {
+      width: 100%;
+      padding: 7px 8px;
+      border: 1px solid var(--borde);
+      border-radius: 6px;
+      font-size: .9rem;
+    }
+    .fila { display: flex; gap: 8px; }
+    .fila > div { flex: 1; }
+    button {
+      margin-top: 14px;
+      width: 100%;
+      padding: 10px;
+      background: var(--verde);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: .95rem;
+      cursor: pointer;
+    }
+    button:hover { filter: brightness(1.1); }
+    button.secundario { background: white; color: var(--verde); border: 1px solid var(--verde); margin-top: 8px; }
+    .buscador input { flex: 3; }
+    .buscador button { flex: 1; margin-top: 0; padding: 7px; }
+    .ayuda { font-size: .78rem; color: #5b6b5b; margin-top: 6px; }
+
+    #mapa { height: 480px; border-radius: 10px; border: 1px solid var(--borde); }
+
+    .tarjetas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0; }
+    .tarjeta { background: var(--verde-claro); border-radius: 8px; padding: 10px; text-align: center; }
+    .tarjeta .valor { font-size: 1.4rem; font-weight: 700; color: var(--verde); }
+    .tarjeta .nombre { font-size: .78rem; }
+
+    .graficas { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 900px) { .graficas { grid-template-columns: 1fr; } }
+
+    table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--borde); }
+    th { background: var(--verde-claro); }
+
+    #estado { font-size: .85rem; margin-top: 10px; min-height: 1.2em; }
+    .error { color: #b71c1c; }
+    footer { text-align: center; font-size: .78rem; color: #5b6b5b; padding: 10px 14px 20px; }
+    footer a { color: var(--verde); }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>🌱 Dashboard Ambiental</h1>
+    <p>Registros de biodiversidad (GBIF) y vegetación satelital (NASA) para cualquier lugar del mundo</p>
+  </header>
+
+  <div class="contenedor">
+
+    <!-- ====== PANEL IZQUIERDO: FORMULARIO DE CONSULTA ====== -->
+    <aside class="panel">
+      <h2>1. ¿Dónde consultar?</h2>
+      <label for="lugar">Buscar por nombre</label>
+      <div class="fila buscador">
+        <input id="lugar" type="text" placeholder="Ej: Fusagasugá, Cundinamarca">
+        <button id="btnLugar" type="button">Buscar</button>
+      </div>
+      <select id="resultadosLugar" style="display:none; margin-top:6px"></select>
+      <p class="ayuda">Municipio, vereda, departamento, región, país… Agrega el departamento o país para evitar confusiones.</p>
+      <p class="ayuda"><b>O</b> haz clic en el mapa, <b>o</b> escribe las coordenadas (grados decimales):</p>
+      <div class="fila">
+        <div>
+          <label for="lat">Latitud</label>
+          <input id="lat" type="number" step="0.0001" value="4.6097">
+        </div>
+        <div>
+          <label for="lon">Longitud</label>
+          <input id="lon" type="number" step="0.0001" value="-74.0817">
+        </div>
+      </div>
+      <label for="radio">Radio de búsqueda (km)</label>
+      <input id="radio" type="number" min="1" max="100" value="10">
+
+      <h2 style="margin-top:18px">2. ¿Qué buscar?</h2>
+      <label for="especie">Especie o grupo (opcional)</label>
+      <input id="especie" type="text" placeholder="Ej: Phytophthora infestans, Fusarium, Insecta">
+      <p class="ayuda">Vacío = todos los registros. Sirve cualquier nivel taxonómico (especie, género, familia…).</p>
+
+      <div class="fila">
+        <div>
+          <label for="anioIni">Año inicial</label>
+          <input id="anioIni" type="number" value="2000">
+        </div>
+        <div>
+          <label for="anioFin">Año final</label>
+          <input id="anioFin" type="number" value="2026">
+        </div>
+      </div>
+
+      <label for="periodoClima">Periodo de clima</label>
+      <select id="periodoClima">
+        <option value="1" selected>Último año</option>
+        <option value="3">Últimos 3 años</option>
+        <option value="5">Últimos 5 años</option>
+        <option value="10">Últimos 10 años</option>
+      </select>
+
+      <h2 style="margin-top:18px">3. Capa satelital</h2>
+      <label for="capa">Capa sobre el mapa</label>
+      <select id="capa">
+        <option value="ninguna">Ninguna (solo mapa base)</option>
+        <option value="ndvi" selected>NDVI – índice de vegetación (MODIS, 8 días)</option>
+        <option value="color">Color real (MODIS Terra, diario)</option>
+      </select>
+      <label for="fecha">Fecha de la imagen</label>
+      <input id="fecha" type="date">
+
+      <button id="btnConsultar">🔎 Consultar</button>
+      <button id="btnCSV" class="secundario">⬇️ Descargar registros GBIF (CSV)</button>
+      <button id="btnCSVClima" class="secundario">⬇️ Descargar clima diario (CSV)</button>
+      <div id="estado"></div>
+    </aside>
+
+    <!-- ====== PANEL DERECHO: MAPA Y RESULTADOS ====== -->
+    <main>
+      <div id="mapa"></div>
+
+      <div class="tarjetas">
+        <div class="tarjeta"><div class="valor" id="totRegistros">–</div><div class="nombre">Registros GBIF en el área</div></div>
+        <div class="tarjeta"><div class="valor" id="totEspecies">–</div><div class="nombre">Especies distintas (muestra)</div></div>
+        <div class="tarjeta"><div class="valor" id="ndviMedio">–</div><div class="nombre">NDVI promedio último año</div></div>
+        <div class="tarjeta"><div class="valor" id="tempMedia">–</div><div class="nombre">Temperatura media (°C)</div></div>
+        <div class="tarjeta"><div class="valor" id="lluviaAnual">–</div><div class="nombre">Lluvia promedio anual (mm)</div></div>
+        <div class="tarjeta"><div class="valor" id="hrMedia">–</div><div class="nombre">Humedad relativa media (%)</div></div>
+      </div>
+
+      <div class="panel" style="margin-bottom:14px">
+        <h2>Clima mensual en el punto (Open-Meteo, reanálisis ERA5)</h2>
+        <canvas id="grafClima" height="90"></canvas>
+        <p class="ayuda" id="notaClima">Barras = lluvia mensual (mm). Líneas = temperatura media, máxima y mínima (°C) y humedad relativa (%).</p>
+      </div>
+
+      <div class="graficas">
+        <div class="panel">
+          <h2>Registros por año</h2>
+          <canvas id="grafAnios"></canvas>
+        </div>
+        <div class="panel">
+          <h2>Serie de NDVI en el punto (MODIS 250 m)</h2>
+          <canvas id="grafNDVI"></canvas>
+          <p class="ayuda" id="notaNDVI"></p>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:14px">
+        <h2>Especies más registradas (según los registros descargados)</h2>
+        <table>
+          <thead><tr><th>#</th><th>Especie</th><th>Registros</th></tr></thead>
+          <tbody id="tablaEspecies"><tr><td colspan="3">Haz una consulta para ver resultados.</td></tr></tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <footer>
+    Fuentes de datos abiertos:
+    <a href="https://www.gbif.org" target="_blank">GBIF</a> ·
+    <a href="https://www.earthdata.nasa.gov/engage/open-data-services-software/earthdata-developer-portal/gibs-api" target="_blank">NASA GIBS</a> ·
+    <a href="https://modis.ornl.gov/data/modis_webservice.html" target="_blank">ORNL DAAC MODIS Web Service</a> ·
+    <a href="https://open-meteo.com" target="_blank">Open-Meteo</a> (CC BY 4.0) ·
+    Búsqueda de lugares: <a href="https://nominatim.org" target="_blank">Nominatim</a> ·
+    Mapa base © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>
+  </footer>
+
+<script>
+/* =====================================================================
+   PARTE 1: EL MAPA
+   ===================================================================== */
+
+// Crear el mapa centrado en las coordenadas iniciales
+const mapa = L.map('mapa').setView([4.6097, -74.0817], 8);
+
+// Mapa base de OpenStreetMap
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 18,
+  attribution: '© OpenStreetMap'
+}).addTo(mapa);
+
+// Fecha por defecto para las capas satelitales: hace 10 días (las imágenes tardan en publicarse)
+const hoy = new Date();
+hoy.setDate(hoy.getDate() - 10);
+document.getElementById('fecha').value = hoy.toISOString().slice(0, 10);
+
+// Capas satelitales de NASA GIBS (servicio de teselas abierto)
+function crearCapaGIBS(tipo, fecha) {
+  const capas = {
+    ndvi:  { nombre: 'MODIS_Terra_NDVI_8Day', formato: 'png', nivel: 9 },
+    color: { nombre: 'MODIS_Terra_CorrectedReflectance_TrueColor', formato: 'jpg', nivel: 9 }
+  };
+  const c = capas[tipo];
+  const url = `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${c.nombre}/default/${fecha}/GoogleMapsCompatible_Level${c.nivel}/{z}/{y}/{x}.${c.formato}`;
+  return L.tileLayer(url, { maxNativeZoom: c.nivel, maxZoom: 18, opacity: 0.75, attribution: 'NASA GIBS' });
+}
+
+let capaSatelital = null;
+function actualizarCapaSatelital() {
+  if (capaSatelital) mapa.removeLayer(capaSatelital);
+  const tipo = document.getElementById('capa').value;
+  const fecha = document.getElementById('fecha').value;
+  if (tipo !== 'ninguna') {
+    capaSatelital = crearCapaGIBS(tipo, fecha).addTo(mapa);
+  }
+}
+document.getElementById('capa').addEventListener('change', actualizarCapaSatelital);
+document.getElementById('fecha').addEventListener('change', actualizarCapaSatelital);
+actualizarCapaSatelital();
+
+// Elementos que dibujamos: círculo del área y puntos de registros
+let circulo = null;
+const capaPuntos = L.layerGroup().addTo(mapa);
+
+// Al hacer clic en el mapa: llenar coordenadas y consultar
+mapa.on('click', (e) => {
+  document.getElementById('lat').value = e.latlng.lat.toFixed(4);
+  document.getElementById('lon').value = e.latlng.lng.toFixed(4);
+  if (limiteLugar) { mapa.removeLayer(limiteLugar); limiteLugar = null; }  // quitar contorno de una búsqueda anterior
+  consultar();
+});
+
+/* =====================================================================
+   PARTE 2: CONSULTA A GBIF (registros de biodiversidad)
+   Documentación: https://techdocs.gbif.org/en/openapi/
+   ===================================================================== */
+
+let ultimosRegistros = [];  // se guardan para exportar a CSV
+
+// Convierte un nombre (ej. "Fusarium") en el código taxonómico de GBIF
+async function buscarTaxon(nombre) {
+  const r = await fetch(`https://api.gbif.org/v1/species/match?name=${encodeURIComponent(nombre)}`);
+  const d = await r.json();
+  if (!d.usageKey) throw new Error(`No se encontró "${nombre}" en GBIF.`);
+  return { key: d.usageKey, nombre: d.scientificName, rango: d.rank };
+}
+
+async function consultarGBIF(lat, lon, radioKm, taxonKey, anioIni, anioFin) {
+  const base = 'https://api.gbif.org/v1/occurrence/search';
+  const filtros = new URLSearchParams({
+    geoDistance: `${lat},${lon},${radioKm}km`,
+    year: `${anioIni},${anioFin}`,
+    hasCoordinate: 'true',
+    hasGeospatialIssue: 'false'
+  });
+  if (taxonKey) filtros.set('taxonKey', taxonKey);
+
+  // a) Conteo por año (facetas) – no descarga registros, solo cuenta
+  const pConteo = fetch(`${base}?${filtros}&limit=0&facet=year&facetLimit=200`).then(r => r.json());
+  // b) Muestra de hasta 300 registros para mapa, tabla y CSV
+  const pRegistros = fetch(`${base}?${filtros}&limit=300`).then(r => r.json());
+
+  const [conteo, registros] = await Promise.all([pConteo, pRegistros]);
+  return { conteo, registros };
+}
+
+/* =====================================================================
+   PARTE 3: SERIE DE NDVI EN EL PUNTO (ORNL DAAC, producto MOD13Q1)
+   Documentación: https://modis.ornl.gov/data/modis_webservice.html
+   ===================================================================== */
+
+async function consultarNDVI(lat, lon) {
+  const base = 'https://modis.ornl.gov/rst/api/v1/MOD13Q1';
+  const encabezado = { headers: { Accept: 'application/json' } };
+
+  // 1) Fechas disponibles para ese punto
+  const fechas = await fetch(`${base}/dates?latitude=${lat}&longitude=${lon}`, encabezado).then(r => r.json());
+  // Últimas 23 imágenes ≈ 1 año (una cada 16 días)
+  const ultimas = fechas.dates.slice(-23);
+
+  // 2) El servicio permite máximo 10 fechas por petición: se pide en bloques
+  const bloques = [];
+  for (let i = 0; i < ultimas.length; i += 10) bloques.push(ultimas.slice(i, i + 10));
+
+  const resultados = await Promise.all(bloques.map(b => {
+    const url = `${base}/subset?latitude=${lat}&longitude=${lon}&band=250m_16_days_NDVI` +
+                `&startDate=${b[0].modis_date}&endDate=${b[b.length - 1].modis_date}&kmAboveBelow=0&kmLeftRight=0`;
+    return fetch(url, encabezado).then(r => r.json());
+  }));
+
+  // 3) Convertir a valores reales de NDVI (escala 0.0001; -3000 = sin dato)
+  const serie = [];
+  resultados.forEach(res => {
+    const escala = parseFloat(res.scale) || 0.0001;
+    res.subset.forEach(s => {
+      const v = s.data[0];
+      if (v > -2000) serie.push({ fecha: s.calendar_date, ndvi: +(v * escala).toFixed(3) });
+    });
+  });
+  return serie;
+}
+
+/* =====================================================================
+   PARTE 3B: CLIMA (Open-Meteo, API histórica basada en reanálisis ERA5)
+   Documentación: https://open-meteo.com/en/docs/historical-weather-api
+   ===================================================================== */
+
+let ultimoClima = [];  // datos diarios, para exportar a CSV
+
+async function consultarClima(lat, lon, anios) {
+  // Los datos históricos llegan con ~5 días de retraso: se termina hace 7 días
+  const fin = new Date(); fin.setDate(fin.getDate() - 7);
+  const inicio = new Date(fin); inicio.setFullYear(inicio.getFullYear() - anios);
+  const f = d => d.toISOString().slice(0, 10);
+
+  const variables = ['temperature_2m_mean', 'temperature_2m_max', 'temperature_2m_min',
+                     'precipitation_sum', 'relative_humidity_2m_mean'].join(',');
+  const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}` +
+              `&start_date=${f(inicio)}&end_date=${f(fin)}&daily=${variables}&timezone=auto`;
+  const r = await fetch(url);
+  const d = await r.json();
+  if (d.error) throw new Error(d.reason);
+
+  // Convertir a una lista de días
+  return d.daily.time.map((fecha, i) => ({
+    fecha,
+    tmed: d.daily.temperature_2m_mean[i],
+    tmax: d.daily.temperature_2m_max[i],
+    tmin: d.daily.temperature_2m_min[i],
+    lluvia: d.daily.precipitation_sum[i],
+    hr: d.daily.relative_humidity_2m_mean[i]
+  }));
+}
+
+// Agrupa los datos diarios por mes: promedios de temperatura y humedad, suma de lluvia
+function resumirPorMes(dias) {
+  const meses = {};
+  dias.forEach(d => {
+    const m = d.fecha.slice(0, 7);  // "AAAA-MM"
+    if (!meses[m]) meses[m] = { tmed: [], tmax: [], tmin: [], hr: [], lluvia: 0 };
+    ['tmed', 'tmax', 'tmin', 'hr'].forEach(v => { if (d[v] != null) meses[m][v].push(d[v]); });
+    meses[m].lluvia += d.lluvia || 0;
+  });
+  const prom = a => a.length ? +(a.reduce((x, y) => x + y, 0) / a.length).toFixed(1) : null;
+  return Object.entries(meses).map(([mes, v]) => ({
+    mes, tmed: prom(v.tmed), tmax: prom(v.tmax), tmin: prom(v.tmin), hr: prom(v.hr), lluvia: +v.lluvia.toFixed(1)
+  }));
+}
+
+/* =====================================================================
+   PARTE 3C: BUSCAR LUGARES POR NOMBRE (Nominatim / OpenStreetMap)
+   Política de uso: https://operations.osmfoundation.org/policies/nominatim/
+   ===================================================================== */
+
+let limiteLugar = null;       // contorno del municipio/departamento en el mapa
+let lugaresEncontrados = [];
+
+async function buscarLugar() {
+  const texto = document.getElementById('lugar').value.trim();
+  if (!texto) return mostrarEstado('Escribe el nombre de un lugar.', true);
+  mostrarEstado(`Buscando "${texto}"…`);
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(texto)}` +
+              `&format=json&limit=6&accept-language=es&polygon_geojson=1&polygon_threshold=0.005`;
+  try {
+    lugaresEncontrados = await fetch(url).then(r => r.json());
+  } catch (err) {
+    return mostrarEstado('No se pudo conectar con el buscador de lugares.', true);
+  }
+  const lista = document.getElementById('resultadosLugar');
+  if (!lugaresEncontrados.length) {
+    lista.style.display = 'none';
+    return mostrarEstado(`No se encontró "${texto}". Prueba agregando el departamento o país.`, true);
+  }
+  // Si hay varios resultados, se muestran en una lista para elegir
+  lista.innerHTML = lugaresEncontrados.map((l, i) => `<option value="${i}">${l.display_name}</option>`).join('');
+  lista.style.display = lugaresEncontrados.length > 1 ? 'block' : 'none';
+  elegirLugar(0);
+}
+
+function elegirLugar(i) {
+  const l = lugaresEncontrados[i];
+  const lat = parseFloat(l.lat), lon = parseFloat(l.lon);
+  document.getElementById('lat').value = lat.toFixed(4);
+  document.getElementById('lon').value = lon.toFixed(4);
+
+  // Dibujar el contorno del lugar (si OpenStreetMap lo tiene)
+  if (limiteLugar) mapa.removeLayer(limiteLugar);
+  if (l.geojson && l.geojson.type !== 'Point') {
+    limiteLugar = L.geoJSON(l.geojson, { style: { color: '#1565c0', weight: 2, fillOpacity: 0.05 } }).addTo(mapa);
+  }
+
+  // Ajustar el radio para cubrir el lugar (centro → esquina de su recuadro), entre 1 y 100 km
+  const [sur, norte, oeste, este] = l.boundingbox.map(parseFloat);
+  const km = mapa.distance([lat, lon], [norte, este]) / 1000;
+  document.getElementById('radio').value = Math.min(100, Math.max(1, Math.round(km)));
+
+  consultar();
+}
+
+/* =====================================================================
+   PARTE 4: GRÁFICAS Y TABLAS
+   ===================================================================== */
+
+let graficoAnios = null, graficoNDVI = null, graficoClima = null;
+
+function dibujarClima(dias) {
+  const meses = resumirPorMes(dias);
+  if (graficoClima) graficoClima.destroy();
+  graficoClima = new Chart(document.getElementById('grafClima'), {
+    data: {
+      labels: meses.map(m => m.mes),
+      datasets: [
+        { type: 'bar',  label: 'Lluvia (mm)',     data: meses.map(m => m.lluvia), backgroundColor: '#90caf9', yAxisID: 'yLluvia', order: 3 },
+        { type: 'line', label: 'T media (°C)',    data: meses.map(m => m.tmed), borderColor: '#e65100', yAxisID: 'yTemp', tension: .3, pointRadius: 1 },
+        { type: 'line', label: 'T máx (°C)',      data: meses.map(m => m.tmax), borderColor: '#ef9a9a', yAxisID: 'yTemp', tension: .3, pointRadius: 0, borderDash: [4, 3] },
+        { type: 'line', label: 'T mín (°C)',      data: meses.map(m => m.tmin), borderColor: '#ffcc80', yAxisID: 'yTemp', tension: .3, pointRadius: 0, borderDash: [4, 3] },
+        { type: 'line', label: 'Humedad rel. (%)', data: meses.map(m => m.hr), borderColor: '#2e7d32', yAxisID: 'yHR', tension: .3, pointRadius: 1 }
+      ]
+    },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        yLluvia: { position: 'left',  beginAtZero: true, title: { display: true, text: 'Lluvia (mm/mes)' } },
+        yTemp:   { position: 'right', title: { display: true, text: '°C' }, grid: { drawOnChartArea: false } },
+        yHR:     { position: 'right', min: 0, max: 100, title: { display: true, text: 'HR %' }, grid: { drawOnChartArea: false } }
+      }
+    }
+  });
+
+  // Tarjetas de resumen
+  const valores = v => dias.map(d => d[v]).filter(x => x != null);
+  const prom = a => a.reduce((x, y) => x + y, 0) / a.length;
+  const aniosDatos = dias.length / 365.25;
+  document.getElementById('tempMedia').textContent = prom(valores('tmed')).toFixed(1);
+  document.getElementById('lluviaAnual').textContent = Math.round(valores('lluvia').reduce((x, y) => x + y, 0) / aniosDatos).toLocaleString('es');
+  document.getElementById('hrMedia').textContent = Math.round(prom(valores('hr')));
+}
+
+function dibujarAnios(facetas) {
+  const datos = (facetas.find(f => f.field === 'YEAR')?.counts || [])
+    .map(c => ({ anio: +c.name, n: c.count }))
+    .sort((a, b) => a.anio - b.anio);
+  if (graficoAnios) graficoAnios.destroy();
+  graficoAnios = new Chart(document.getElementById('grafAnios'), {
+    type: 'bar',
+    data: {
+      labels: datos.map(d => d.anio),
+      datasets: [{ label: 'Registros', data: datos.map(d => d.n), backgroundColor: '#66bb6a' }]
+    },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+  });
+}
+
+function dibujarNDVI(serie) {
+  if (graficoNDVI) graficoNDVI.destroy();
+  graficoNDVI = new Chart(document.getElementById('grafNDVI'), {
+    type: 'line',
+    data: {
+      labels: serie.map(s => s.fecha),
+      datasets: [{ label: 'NDVI', data: serie.map(s => s.ndvi), borderColor: '#2e7d32', tension: .3, fill: false }]
+    },
+    options: { plugins: { legend: { display: false } }, scales: { y: { min: -0.2, max: 1 } } }
+  });
+  const prom = serie.reduce((a, s) => a + s.ndvi, 0) / serie.length;
+  document.getElementById('ndviMedio').textContent = serie.length ? prom.toFixed(2) : '–';
+}
+
+function llenarTablaEspecies(registros) {
+  const cuenta = {};
+  registros.forEach(r => { if (r.species) cuenta[r.species] = (cuenta[r.species] || 0) + 1; });
+  const top = Object.entries(cuenta).sort((a, b) => b[1] - a[1]).slice(0, 15);
+  document.getElementById('totEspecies').textContent = Object.keys(cuenta).length;
+  document.getElementById('tablaEspecies').innerHTML = top.length
+    ? top.map(([sp, n], i) => `<tr><td>${i + 1}</td><td><i>${sp}</i></td><td>${n}</td></tr>`).join('')
+    : '<tr><td colspan="3">Sin registros con nombre de especie.</td></tr>';
+}
+
+function dibujarPuntos(registros) {
+  capaPuntos.clearLayers();
+  registros.forEach(r => {
+    L.circleMarker([r.decimalLatitude, r.decimalLongitude], {
+      radius: 5, color: '#d84315', fillOpacity: .7, weight: 1
+    }).bindPopup(`<b><i>${r.scientificName || 'Sin nombre'}</i></b><br>
+                  Fecha: ${r.eventDate ? r.eventDate.slice(0, 10) : 'N/D'}<br>
+                  País: ${r.country || 'N/D'}<br>
+                  <a href="https://www.gbif.org/occurrence/${r.key}" target="_blank">Ver en GBIF</a>`)
+      .addTo(capaPuntos);
+  });
+}
+
+/* =====================================================================
+   PARTE 5: FUNCIÓN PRINCIPAL – une todo al presionar "Consultar"
+   ===================================================================== */
+
+function mostrarEstado(texto, esError = false) {
+  const el = document.getElementById('estado');
+  el.textContent = texto;
+  el.className = esError ? 'error' : '';
+}
+
+async function consultar() {
+  const lat = parseFloat(document.getElementById('lat').value);
+  const lon = parseFloat(document.getElementById('lon').value);
+  const radio = parseFloat(document.getElementById('radio').value);
+  const especie = document.getElementById('especie').value.trim();
+  const anioIni = document.getElementById('anioIni').value;
+  const anioFin = document.getElementById('anioFin').value;
+
+  if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    return mostrarEstado('Coordenadas no válidas.', true);
+  }
+
+  // Dibujar el área de búsqueda
+  if (circulo) mapa.removeLayer(circulo);
+  circulo = L.circle([lat, lon], { radius: radio * 1000, color: '#2e7d32', fill: false }).addTo(mapa);
+  mapa.fitBounds(circulo.getBounds());
+
+  mostrarEstado('Consultando GBIF y NASA…');
+
+  // --- Biodiversidad (GBIF) ---
+  try {
+    let taxonKey = null;
+    if (especie) {
+      const t = await buscarTaxon(especie);
+      taxonKey = t.key;
+      mostrarEstado(`Taxón encontrado: ${t.nombre} (${t.rango}). Consultando…`);
+    }
+    const { conteo, registros } = await consultarGBIF(lat, lon, radio, taxonKey, anioIni, anioFin);
+    ultimosRegistros = registros.results;
+    document.getElementById('totRegistros').textContent = conteo.count.toLocaleString('es');
+    dibujarAnios(conteo.facets);
+    dibujarPuntos(ultimosRegistros);
+    llenarTablaEspecies(ultimosRegistros);
+    mostrarEstado(`Listo. Se muestran ${ultimosRegistros.length} de ${conteo.count.toLocaleString('es')} registros.`);
+  } catch (err) {
+    mostrarEstado('Error al consultar GBIF: ' + err.message, true);
+  }
+
+  // --- Clima (Open-Meteo) ---
+  const anios = parseInt(document.getElementById('periodoClima').value);
+  document.getElementById('notaClima').textContent = 'Cargando clima…';
+  try {
+    ultimoClima = await consultarClima(lat, lon, anios);
+    dibujarClima(ultimoClima);
+    document.getElementById('notaClima').textContent =
+      `${ultimoClima[0].fecha} a ${ultimoClima[ultimoClima.length - 1].fecha}. Barras = lluvia mensual; líneas = temperatura y humedad relativa. ` +
+      'Datos de reanálisis (celda de ~10–25 km): sirven para tendencias, no reemplazan una estación local.';
+  } catch (err) {
+    document.getElementById('notaClima').textContent = 'No se pudo obtener el clima: ' + err.message;
+  }
+
+  // --- Vegetación (NDVI) ---
+  document.getElementById('notaNDVI').textContent = 'Cargando serie de NDVI (puede tardar unos segundos)…';
+  try {
+    const serie = await consultarNDVI(lat, lon);
+    dibujarNDVI(serie);
+    document.getElementById('notaNDVI').textContent =
+      `${serie.length} imágenes de 16 días. NDVI > 0.6 = vegetación densa; < 0.2 = suelo desnudo, agua o nubes.`;
+  } catch (err) {
+    document.getElementById('notaNDVI').textContent = 'No se pudo obtener el NDVI de este punto (servicio no disponible o punto en el mar).';
+  }
+}
+
+/* =====================================================================
+   PARTE 6: EXPORTAR A CSV (para abrir en Excel, R o QGIS)
+   ===================================================================== */
+
+function descargarCSV() {
+  if (!ultimosRegistros.length) return mostrarEstado('Primero haz una consulta.', true);
+  const columnas = ['key', 'scientificName', 'species', 'family', 'kingdom',
+                    'decimalLatitude', 'decimalLongitude', 'eventDate', 'year', 'country', 'basisOfRecord'];
+  const limpiar = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const filas = ultimosRegistros.map(r => columnas.map(c => limpiar(r[c])).join(','));
+  const csv = [columnas.join(','), ...filas].join('\n');
+  const enlace = document.createElement('a');
+  enlace.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  enlace.download = 'registros_gbif.csv';
+  enlace.click();
+}
+
+function descargarCSVClima() {
+  if (!ultimoClima.length) return mostrarEstado('Primero haz una consulta.', true);
+  const lat = document.getElementById('lat').value, lon = document.getElementById('lon').value;
+  const filas = ultimoClima.map(d => [d.fecha, lat, lon, d.tmed, d.tmax, d.tmin, d.lluvia, d.hr].join(','));
+  const csv = ['fecha,latitud,longitud,temp_media_C,temp_max_C,temp_min_C,lluvia_mm,humedad_rel_pct', ...filas].join('\n');
+  const enlace = document.createElement('a');
+  enlace.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  enlace.download = 'clima_diario_openmeteo.csv';
+  enlace.click();
+}
+
+document.getElementById('btnConsultar').addEventListener('click', consultar);
+document.getElementById('btnCSV').addEventListener('click', descargarCSV);
+document.getElementById('btnCSVClima').addEventListener('click', descargarCSVClima);
+document.getElementById('btnLugar').addEventListener('click', buscarLugar);
+document.getElementById('lugar').addEventListener('keydown', e => { if (e.key === 'Enter') buscarLugar(); });
+document.getElementById('resultadosLugar').addEventListener('change', e => elegirLugar(+e.target.value));
+</script>
+</body>
+</html>
