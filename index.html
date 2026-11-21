@@ -157,8 +157,8 @@
       <h2 style="margin-top:18px">3. Capa satelital</h2>
       <label for="capa">Capa sobre el mapa</label>
       <select id="capa">
-        <option value="ninguna">Ninguna (solo mapa base)</option>
-        <option value="ndvi" selected>NDVI – índice de vegetación (MODIS, 8 días)</option>
+        <option value="ninguna" selected>Ninguna (solo mapa base)</option>
+        <option value="ndvi">NDVI – índice de vegetación (MODIS, 8 días)</option>
         <option value="color">Color real (MODIS Terra, diario)</option>
       </select>
       <label for="fecha">Fecha de la imagen</label>
@@ -215,7 +215,8 @@
     Fuentes de datos abiertos:
     <a href="https://www.gbif.org" target="_blank">GBIF</a> ·
     <a href="https://www.earthdata.nasa.gov/engage/open-data-services-software/earthdata-developer-portal/gibs-api" target="_blank">NASA GIBS</a> ·
-    <a href="https://modis.ornl.gov/data/modis_webservice.html" target="_blank">ORNL DAAC MODIS Web Service</a> ·
+    <a href="https://planetarycomputer.microsoft.com/dataset/modis-13Q1-061" target="_blank">Microsoft Planetary Computer</a> ·
+    <a href="https://modis.ornl.gov/data/modis_webservice.html" target="_blank">ORNL DAAC</a> ·
     <a href="https://open-meteo.com" target="_blank">Open-Meteo</a> (CC BY 4.0) ·
     Búsqueda de lugares: <a href="https://nominatim.org" target="_blank">Nominatim</a> ·
     Mapa base © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>
@@ -229,21 +230,25 @@
 // Crear el mapa centrado en las coordenadas iniciales
 const mapa = L.map('mapa').setView([4.6097, -74.0817], 8);
 
-// Mapas base. Se usan CARTO y Esri porque funcionan aunque el archivo se abra con doble clic.
-// (Los servidores de OpenStreetMap bloquean esas peticiones: "Access blocked / 403".)
+// Mapas base.
+// Los de Esri funcionan aunque el archivo se abra con doble clic (sin servidor).
+// OpenStreetMap y CARTO bloquean esas peticiones ("Access blocked" / "API key required"),
+// pero funcionan bien cuando la página ya está publicada en GitHub Pages.
 const mapasBase = {
-  'Calles (CARTO)': L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-    maxZoom: 19, subdomains: 'abcd',
-    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · © <a href="https://carto.com/attributions">CARTO</a>'
+  'Calles (Esri)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19, attribution: '© Esri y colaboradores'
+  }),
+  'Topográfico (Esri)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19, attribution: '© Esri y colaboradores'
   }),
   'Satélite (Esri)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     maxZoom: 19, attribution: 'Imágenes © Esri, Maxar, Earthstar Geographics'
   }),
-  'Topográfico (Esri)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom: 19, attribution: '© Esri y colaboradores'
+  'OpenStreetMap (solo publicado)': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   })
 };
-mapasBase['Calles (CARTO)'].addTo(mapa);
+mapasBase['Calles (Esri)'].addTo(mapa);
 // Selector de mapa base (esquina superior derecha del mapa)
 L.control.layers(mapasBase, null, { position: 'topright' }).addTo(mapa);
 
@@ -327,7 +332,66 @@ async function consultarGBIF(lat, lon, radioKm, taxonKey, anioIni, anioFin) {
    Documentación: https://modis.ornl.gov/data/modis_webservice.html
    ===================================================================== */
 
+// Fuente principal: Microsoft Planetary Computer (catálogo STAC + API de datos, sin clave)
+// Documentación: https://planetarycomputer.microsoft.com/dataset/modis-13Q1-061
+async function consultarNDVI_PC(lat, lon) {
+  const pc = 'https://planetarycomputer.microsoft.com/api';
+  const fin = new Date();
+  const inicio = new Date(); inicio.setFullYear(inicio.getFullYear() - 1);
+
+  // 1) Buscar las imágenes MODIS 16 días que cubren el punto en el último año
+  const busqueda = await fetch(`${pc}/stac/v1/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      collections: ['modis-13Q1-061'],
+      intersects: { type: 'Point', coordinates: [lon, lat] },
+      datetime: `${inicio.toISOString()}/${fin.toISOString()}`,
+      limit: 100
+    })
+  }).then(r => { if (!r.ok) throw new Error('búsqueda ' + r.status); return r.json(); });
+
+  // Solo el satélite Terra (MOD13Q1), una imagen cada 16 días
+  const imagenes = busqueda.features
+    .filter(f => f.id.startsWith('MOD13Q1'))
+    .map(f => ({ id: f.id, fecha: (f.properties.start_datetime || f.properties.datetime).slice(0, 10) }))
+    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+  if (!imagenes.length) throw new Error('sin imágenes para este punto');
+
+  // 2) Leer el valor del píxel de NDVI en cada imagen
+  const valores = await Promise.all(imagenes.map(async img => {
+    try {
+      const url = `${pc}/data/v1/item/point/${lon},${lat}?collection=modis-13Q1-061` +
+                  `&item=${img.id}&assets=250m_16_days_NDVI`;
+      const d = await fetch(url).then(r => r.json());
+      let v = d.values ? d.values[0] : null;
+      if (v == null || v <= -2000) return null;          // -3000 = sin dato
+      if (Math.abs(v) > 1.5) v = v * 0.0001;              // escala del producto
+      return { fecha: img.fecha, ndvi: +v.toFixed(3) };
+    } catch { return null; }
+  }));
+  const serie = valores.filter(Boolean);
+  if (!serie.length) throw new Error('no se pudieron leer valores');
+  return serie;
+}
+
+// Intenta Planetary Computer y, si falla, ORNL DAAC
 async function consultarNDVI(lat, lon) {
+  try {
+    return { serie: await consultarNDVI_PC(lat, lon), fuente: 'Microsoft Planetary Computer' };
+  } catch (e1) {
+    console.warn('Planetary Computer falló:', e1);
+    try {
+      return { serie: await consultarNDVI_ORNL(lat, lon), fuente: 'ORNL DAAC' };
+    } catch (e2) {
+      console.warn('ORNL falló:', e2);
+      throw new Error(`Planetary Computer: ${e1.message}; ORNL: ${e2.message}`);
+    }
+  }
+}
+
+// Fuente de respaldo: ORNL DAAC MODIS Web Service
+async function consultarNDVI_ORNL(lat, lon) {
   const base = 'https://modis.ornl.gov/rst/api/v1/MOD13Q1';
   const encabezado = { headers: { Accept: 'application/json' } };
 
@@ -631,12 +695,15 @@ async function consultar() {
   // --- Vegetación (NDVI) ---
   document.getElementById('notaNDVI').textContent = 'Cargando serie de NDVI (puede tardar unos segundos)…';
   try {
-    const serie = await consultarNDVI(lat, lon);
+    const { serie, fuente } = await consultarNDVI(lat, lon);
     dibujarNDVI(serie);
     document.getElementById('notaNDVI').textContent =
-      `${serie.length} imágenes de 16 días. NDVI > 0.6 = vegetación densa; < 0.2 = suelo desnudo, agua o nubes.`;
+      `${serie.length} imágenes de 16 días (fuente: ${fuente}). NDVI > 0.6 = vegetación densa; < 0.2 = suelo desnudo, agua o nubes.`;
   } catch (err) {
-    document.getElementById('notaNDVI').textContent = 'No se pudo obtener el NDVI de este punto (servicio no disponible o punto en el mar).';
+    if (graficoNDVI) { graficoNDVI.destroy(); graficoNDVI = null; }
+    document.getElementById('ndviMedio').textContent = '–';
+    document.getElementById('notaNDVI').textContent =
+      'No se pudo obtener el NDVI de este punto. Detalle técnico: ' + err.message;
   }
 }
 
