@@ -9,6 +9,8 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- SheetJS: para leer archivos de Excel y CSV -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <style>
     /* ====== ESTILOS (apariencia) ====== */
@@ -49,6 +51,8 @@
       padding: 14px;
     }
     .panel h2 { font-size: 1rem; margin: 0 0 10px; color: var(--verde); }
+    .panel h3 { font-size: .92rem; margin: 6px 0 6px; }
+    input[type=file] { padding: 6px; background: var(--gris); }
 
     label { display: block; font-size: .85rem; margin: 10px 0 4px; font-weight: 600; }
     input, select {
@@ -207,6 +211,78 @@
           <thead><tr><th>#</th><th>Especie</th><th>Registros</th></tr></thead>
           <tbody id="tablaEspecies"><tr><td colspan="3">Haz una consulta para ver resultados.</td></tr></tbody>
         </table>
+      </div>
+
+      <!-- ====== MÓDULO: MUERTE DESCENDENTE DEL CAFETO ====== -->
+      <div class="panel" id="moduloPhoma" style="margin-top:14px">
+        <h2>☕ Muerte descendente del cafeto (<i>Phoma</i> spp.)</h2>
+
+        <div class="graficas">
+          <!-- A) Registros propios -->
+          <div>
+            <h3>A. Tus registros (CSV o Excel)</h3>
+            <p class="ayuda">Columnas mínimas: <b>latitud</b>, <b>longitud</b>, <b>fecha</b> e <b>incidencia</b> (o severidad).
+              Opcional: finca, lote, municipio. Los nombres de columna se detectan solos; puedes corregirlos abajo.</p>
+            <input id="archivoPhoma" type="file" accept=".csv,.xlsx,.xls">
+            <button id="btnPlantilla" class="secundario" type="button">⬇️ Descargar plantilla de ejemplo</button>
+
+            <div id="mapeoColumnas" style="display:none">
+              <div class="fila">
+                <div><label>Latitud</label><select id="colLat"></select></div>
+                <div><label>Longitud</label><select id="colLon"></select></div>
+              </div>
+              <div class="fila">
+                <div><label>Fecha</label><select id="colFecha"></select></div>
+                <div><label>Incidencia / severidad</label><select id="colInc"></select></div>
+              </div>
+              <label>Identificador (finca, lote…)</label><select id="colId"></select>
+              <label for="ventanaDias">Días de clima antes de cada evaluación</label>
+              <input id="ventanaDias" type="number" min="7" max="120" value="30">
+              <button id="btnProcesarPhoma" type="button">📍 Ver en el mapa y cruzar con clima y altitud</button>
+              <button id="btnCSVPhoma" class="secundario" type="button">⬇️ Descargar registros enriquecidos (CSV)</button>
+            </div>
+            <div id="estadoPhoma" class="ayuda"></div>
+          </div>
+
+          <!-- B) GBIF -->
+          <div>
+            <h3>B. Registros abiertos en GBIF</h3>
+            <p class="ayuda">Busca ocurrencias georreferenciadas del género en Colombia. Ojo: varias especies antes llamadas
+              <i>Phoma</i> hoy están en otros géneros (p. ej. <i>Didymella</i>, <i>Boeremia</i>, <i>Stagonosporopsis</i>);
+              puedes escribir otro nombre.</p>
+            <label for="taxonPhoma">Taxón</label>
+            <input id="taxonPhoma" type="text" value="Phoma">
+            <label for="paisPhoma">País (código ISO)</label>
+            <input id="paisPhoma" type="text" value="CO" maxlength="2">
+            <button id="btnGBIFPhoma" type="button">🔎 Buscar en GBIF</button>
+            <div id="estadoGBIFPhoma" class="ayuda"></div>
+          </div>
+        </div>
+
+        <div id="resultadosPhoma" style="display:none; margin-top:14px">
+          <p class="ayuda" id="leyendaPhoma"></p>
+          <div class="graficas">
+            <div>
+              <label for="varRelacion">Relación de la incidencia con…</label>
+              <select id="varRelacion">
+                <option value="altitud">Altitud (m s.n.m.)</option>
+                <option value="tmed">Temperatura media (°C)</option>
+                <option value="tmin">Temperatura mínima media (°C)</option>
+                <option value="lluvia">Lluvia acumulada (mm)</option>
+                <option value="diasLluvia">Días con lluvia ≥ 1 mm</option>
+                <option value="hr">Humedad relativa media (%)</option>
+              </select>
+              <canvas id="grafPhoma"></canvas>
+              <p class="ayuda" id="notaCorrelacion"></p>
+            </div>
+            <div style="max-height:380px; overflow:auto">
+              <table>
+                <thead><tr><th>Registro</th><th>Fecha</th><th>Incid.</th><th>Alt. (m)</th><th>T med</th><th>T mín</th><th>Lluvia</th><th>HR</th></tr></thead>
+                <tbody id="tablaPhoma"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
     </main>
   </div>
@@ -741,6 +817,255 @@ document.getElementById('btnCSVClima').addEventListener('click', descargarCSVCli
 document.getElementById('btnLugar').addEventListener('click', buscarLugar);
 document.getElementById('lugar').addEventListener('keydown', e => { if (e.key === 'Enter') buscarLugar(); });
 document.getElementById('resultadosLugar').addEventListener('change', e => elegirLugar(+e.target.value));
+
+/* =====================================================================
+   PARTE 7: MUERTE DESCENDENTE DEL CAFETO (Phoma spp.)
+   A) Registros propios: leer archivo → mapa → altitud y clima previo → relación
+   B) Registros abiertos de GBIF
+   ===================================================================== */
+
+let filasPhoma = [];          // filas tal como vienen del archivo
+let registrosPhoma = [];      // registros procesados y enriquecidos
+const capaPhoma = L.layerGroup().addTo(mapa);
+const capaGBIFPhoma = L.layerGroup().addTo(mapa);
+let graficoPhoma = null;
+
+// --- Utilidades ---
+// Números con coma decimal ("4,6") o punto ("4.6")
+function aNumero(v) {
+  if (typeof v === 'number') return v;
+  if (v == null || v === '') return NaN;
+  let s = String(v).trim().replace('%', '');
+  if (s.includes(',') && !s.includes('.')) s = s.replace(',', '.');
+  return parseFloat(s);
+}
+// Fechas: objeto Date de Excel, "2024-05-10", "10/05/2024" o "10-05-2024" (día/mes/año)
+function aFecha(v) {
+  if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0, 10);
+  const s = String(v ?? '').trim();
+  let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  return null;
+}
+// Ejecuta tareas de a pocas a la vez (para no saturar los servicios)
+async function enLotes(items, tamano, tarea) {
+  const salida = [];
+  for (let i = 0; i < items.length; i += tamano) {
+    salida.push(...await Promise.all(items.slice(i, i + tamano).map(tarea)));
+  }
+  return salida;
+}
+// Coeficiente de correlación de Pearson
+function pearson(x, y) {
+  const n = x.length, mx = x.reduce((a, b) => a + b, 0) / n, my = y.reduce((a, b) => a + b, 0) / n;
+  let sxy = 0, sx = 0, sy = 0;
+  for (let i = 0; i < n; i++) { sxy += (x[i] - mx) * (y[i] - my); sx += (x[i] - mx) ** 2; sy += (y[i] - my) ** 2; }
+  return sxy / Math.sqrt(sx * sy);
+}
+function descargarTexto(texto, nombre) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + texto], { type: 'text/csv;charset=utf-8' }));
+  a.download = nombre; a.click();
+}
+
+// --- Plantilla de ejemplo (datos ficticios, solo para ver el formato) ---
+document.getElementById('btnPlantilla').addEventListener('click', () => {
+  descargarTexto(
+    'finca,municipio,latitud,longitud,fecha,incidencia\n' +
+    'Finca ejemplo 1,El Tambo,2.4520,-76.8100,2025-03-15,12.5\n' +
+    'Finca ejemplo 2,Popayán,2.4400,-76.6100,2025-03-20,4.0\n',
+    'plantilla_muerte_descendente.csv');
+});
+
+// --- Leer el archivo y detectar columnas ---
+document.getElementById('archivoPhoma').addEventListener('change', async (e) => {
+  const archivo = e.target.files[0];
+  if (!archivo) return;
+  const estado = document.getElementById('estadoPhoma');
+  try {
+    const datos = await archivo.arrayBuffer();
+    const libro = XLSX.read(datos, { type: 'array', cellDates: true });
+    const hoja = libro.Sheets[libro.SheetNames[0]];
+    filasPhoma = XLSX.utils.sheet_to_json(hoja, { defval: '' });
+    if (!filasPhoma.length) throw new Error('el archivo no tiene filas');
+  } catch (err) {
+    estado.textContent = 'No se pudo leer el archivo: ' + err.message;
+    return;
+  }
+
+  const columnas = Object.keys(filasPhoma[0]);
+  const buscar = (patrones) => columnas.find(c => patrones.some(p => p.test(c))) || '';
+  const sugerencias = {
+    colLat:   buscar([/^lat/i, /latitud/i, /^y$/i]),
+    colLon:   buscar([/^lon/i, /^lng/i, /longitud/i, /^x$/i]),
+    colFecha: buscar([/fecha/i, /date/i, /^dia/i]),
+    colInc:   buscar([/incid/i, /sever/i, /porcent/i, /^%/]),
+    colId:    buscar([/finca/i, /lote/i, /predio/i, /^id/i, /c[oó]digo/i, /municip/i])
+  };
+  for (const [id, sugerida] of Object.entries(sugerencias)) {
+    const sel = document.getElementById(id);
+    sel.innerHTML = (id === 'colId' ? '<option value="">(ninguno)</option>' : '') +
+      columnas.map(c => `<option ${c === sugerida ? 'selected' : ''}>${c}</option>`).join('');
+  }
+  document.getElementById('mapeoColumnas').style.display = 'block';
+  estado.textContent = `${filasPhoma.length} filas leídas. Revisa las columnas y pulsa el botón.`;
+});
+
+// --- Procesar: validar, poner en el mapa y enriquecer ---
+document.getElementById('btnProcesarPhoma').addEventListener('click', procesarPhoma);
+
+async function procesarPhoma() {
+  const estado = document.getElementById('estadoPhoma');
+  const c = id => document.getElementById(id).value;
+  const ventana = parseInt(c('ventanaDias')) || 30;
+
+  // 1) Validar filas
+  registrosPhoma = filasPhoma.map((f, i) => ({
+    id: c('colId') ? String(f[c('colId')]) : `Registro ${i + 1}`,
+    lat: aNumero(f[c('colLat')]),
+    lon: aNumero(f[c('colLon')]),
+    fecha: aFecha(f[c('colFecha')]),
+    incidencia: aNumero(f[c('colInc')])
+  })).filter(r => !isNaN(r.lat) && !isNaN(r.lon) && Math.abs(r.lat) <= 90 && Math.abs(r.lon) <= 180 && r.fecha && !isNaN(r.incidencia));
+
+  const descartadas = filasPhoma.length - registrosPhoma.length;
+  if (!registrosPhoma.length) {
+    estado.textContent = 'Ninguna fila tiene coordenadas, fecha e incidencia válidas. Revisa las columnas elegidas.';
+    return;
+  }
+  if (registrosPhoma.length > 300) {
+    registrosPhoma = registrosPhoma.slice(0, 300);
+    estado.textContent = 'Se procesarán solo los primeros 300 registros. ';
+  }
+
+  // 2) Dibujar en el mapa, con color según la incidencia (cuartiles de tus datos)
+  const valores = registrosPhoma.map(r => r.incidencia).sort((a, b) => a - b);
+  const q = p => valores[Math.min(valores.length - 1, Math.floor(p * valores.length))];
+  const cortes = [q(0.25), q(0.5), q(0.75)];
+  const colores = ['#2e7d32', '#f9a825', '#ef6c00', '#b71c1c'];
+  const colorDe = v => colores[v <= cortes[0] ? 0 : v <= cortes[1] ? 1 : v <= cortes[2] ? 2 : 3];
+
+  capaPhoma.clearLayers();
+  registrosPhoma.forEach(r => {
+    r.marcador = L.circleMarker([r.lat, r.lon], {
+      radius: 7, color: '#3e2723', weight: 1, fillColor: colorDe(r.incidencia), fillOpacity: .9
+    }).bindPopup(`<b>${r.id}</b><br>Fecha: ${r.fecha}<br>Incidencia/severidad: ${r.incidencia}`).addTo(capaPhoma);
+  });
+  mapa.fitBounds(L.featureGroup(registrosPhoma.map(r => r.marcador)).getBounds().pad(0.2));
+  document.getElementById('leyendaPhoma').innerHTML =
+    `Colores en el mapa (cuartiles de tus datos): ` +
+    `<span style="color:${colores[0]}">●</span> ≤ ${cortes[0]} · <span style="color:${colores[1]}">●</span> ≤ ${cortes[1]} · ` +
+    `<span style="color:${colores[2]}">●</span> ≤ ${cortes[2]} · <span style="color:${colores[3]}">●</span> > ${cortes[2]}` +
+    (descartadas ? ` · ${descartadas} filas descartadas por datos incompletos.` : '');
+  document.getElementById('resultadosPhoma').style.display = 'block';
+
+  // 3) Altitud de cada punto (Open-Meteo Elevation, hasta 100 puntos por consulta)
+  estado.textContent += 'Consultando altitud…';
+  try {
+    for (let i = 0; i < registrosPhoma.length; i += 100) {
+      const grupo = registrosPhoma.slice(i, i + 100);
+      const d = await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${grupo.map(r => r.lat).join(',')}` +
+                            `&longitude=${grupo.map(r => r.lon).join(',')}`).then(r => r.json());
+      grupo.forEach((r, j) => r.altitud = Math.round(d.elevation[j]));
+    }
+  } catch (err) { console.warn('Altitud:', err); }
+
+  // 4) Clima de los días previos a cada evaluación (Open-Meteo, 4 consultas a la vez)
+  let hechos = 0;
+  await enLotes(registrosPhoma, 4, async r => {
+    try {
+      const fin = new Date(r.fecha + 'T12:00:00');
+      const inicio = new Date(fin); inicio.setDate(inicio.getDate() - ventana);
+      const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${r.lat}&longitude=${r.lon}` +
+        `&start_date=${inicio.toISOString().slice(0, 10)}&end_date=${r.fecha}` +
+        `&daily=temperature_2m_mean,temperature_2m_min,precipitation_sum,relative_humidity_2m_mean&timezone=auto`;
+      const d = (await fetch(url).then(x => x.json())).daily;
+      const prom = a => { const v = a.filter(x => x != null); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
+      r.tmed = +prom(d.temperature_2m_mean).toFixed(1);
+      r.tmin = +prom(d.temperature_2m_min).toFixed(1);
+      r.lluvia = +d.precipitation_sum.reduce((s, x) => s + (x || 0), 0).toFixed(1);
+      r.diasLluvia = d.precipitation_sum.filter(x => x >= 1).length;
+      r.hr = Math.round(prom(d.relative_humidity_2m_mean));
+    } catch (err) { console.warn('Clima', r.id, err); }
+    estado.textContent = `Consultando clima… ${++hechos} de ${registrosPhoma.length}`;
+  });
+
+  estado.textContent = `Listo: ${registrosPhoma.length} registros con altitud y clima de los ${ventana} días previos a cada evaluación.`;
+  llenarTablaPhoma();
+  dibujarRelacionPhoma();
+}
+
+function llenarTablaPhoma() {
+  const f = v => v ?? '–';
+  document.getElementById('tablaPhoma').innerHTML = registrosPhoma.map(r =>
+    `<tr><td>${r.id}</td><td>${r.fecha}</td><td>${r.incidencia}</td><td>${f(r.altitud)}</td>` +
+    `<td>${f(r.tmed)}</td><td>${f(r.tmin)}</td><td>${f(r.lluvia)}</td><td>${f(r.hr)}</td></tr>`).join('');
+}
+
+function dibujarRelacionPhoma() {
+  const v = document.getElementById('varRelacion').value;
+  const etiqueta = document.getElementById('varRelacion').selectedOptions[0].text;
+  const pares = registrosPhoma.filter(r => r[v] != null && !isNaN(r[v])).map(r => ({ x: r[v], y: r.incidencia }));
+  if (graficoPhoma) graficoPhoma.destroy();
+  graficoPhoma = new Chart(document.getElementById('grafPhoma'), {
+    type: 'scatter',
+    data: { datasets: [{ data: pares, backgroundColor: '#6d4c41' }] },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: { x: { title: { display: true, text: etiqueta } }, y: { title: { display: true, text: 'Incidencia / severidad' } } }
+    }
+  });
+  const nota = document.getElementById('notaCorrelacion');
+  if (pares.length >= 3) {
+    const r = pearson(pares.map(p => p.x), pares.map(p => p.y));
+    nota.textContent = `Correlación de Pearson r = ${r.toFixed(2)} (n = ${pares.length}). ` +
+      'Es exploratoria: no controla otras variables ni la autocorrelación espacial o temporal.';
+  } else {
+    nota.textContent = 'Se necesitan al menos 3 registros con datos para calcular la correlación.';
+  }
+}
+document.getElementById('varRelacion').addEventListener('change', dibujarRelacionPhoma);
+
+document.getElementById('btnCSVPhoma').addEventListener('click', () => {
+  if (!registrosPhoma.length) return;
+  const ventana = document.getElementById('ventanaDias').value;
+  const cols = ['id', 'lat', 'lon', 'fecha', 'incidencia', 'altitud', 'tmed', 'tmin', 'lluvia', 'diasLluvia', 'hr'];
+  const enc = ['registro', 'latitud', 'longitud', 'fecha', 'incidencia', 'altitud_m',
+               `tmed_${ventana}d_C`, `tmin_${ventana}d_C`, `lluvia_${ventana}d_mm`, `dias_lluvia_${ventana}d`, `hr_${ventana}d_pct`];
+  const filas = registrosPhoma.map(r => cols.map(k => `"${String(r[k] ?? '').replace(/"/g, '""')}"`).join(','));
+  descargarTexto([enc.join(','), ...filas].join('\n'), 'muerte_descendente_enriquecido.csv');
+});
+
+// --- B) Búsqueda en GBIF ---
+document.getElementById('btnGBIFPhoma').addEventListener('click', async () => {
+  const estado = document.getElementById('estadoGBIFPhoma');
+  const nombre = document.getElementById('taxonPhoma').value.trim();
+  const pais = document.getElementById('paisPhoma').value.trim().toUpperCase();
+  estado.textContent = 'Buscando…';
+  try {
+    const t = await buscarTaxon(nombre);
+    const d = await fetch(`https://api.gbif.org/v1/occurrence/search?taxonKey=${t.key}&country=${pais}` +
+                          `&hasCoordinate=true&hasGeospatialIssue=false&limit=300`).then(r => r.json());
+    capaGBIFPhoma.clearLayers();
+    d.results.forEach(r => {
+      L.circleMarker([r.decimalLatitude, r.decimalLongitude], { radius: 6, color: '#6a1b9a', fillOpacity: .6, weight: 1 })
+        .bindPopup(`<b><i>${r.scientificName}</i></b><br>Fecha: ${r.eventDate ? r.eventDate.slice(0, 10) : 'N/D'}<br>` +
+                   `${r.locality || r.stateProvince || ''}<br><a href="https://www.gbif.org/occurrence/${r.key}" target="_blank">Ver en GBIF</a>`)
+        .addTo(capaGBIFPhoma);
+    });
+    if (d.results.length) {
+      mapa.fitBounds(L.featureGroup(capaGBIFPhoma.getLayers()).getBounds().pad(0.2));
+      estado.innerHTML = `<b>${d.count}</b> registros de <i>${t.nombre}</i> en ${pais} (puntos morados en el mapa).`;
+    } else {
+      estado.innerHTML = `No hay registros georreferenciados de <i>${t.nombre}</i> en ${pais}. ` +
+        'Es esperable: los registros de enfermedades en cultivos rara vez se publican en GBIF.';
+    }
+  } catch (err) {
+    estado.textContent = 'Error: ' + err.message;
+  }
+});
 </script>
 </body>
 </html>
