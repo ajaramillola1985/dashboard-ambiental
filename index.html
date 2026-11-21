@@ -11,6 +11,8 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <!-- SheetJS: para leer archivos de Excel y CSV -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- html2canvas: para convertir el mapa en imagen -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
   <style>
     /* ====== ESTILOS (apariencia) ====== */
@@ -51,8 +53,6 @@
       padding: 14px;
     }
     .panel h2 { font-size: 1rem; margin: 0 0 10px; color: var(--verde); }
-    .panel h3 { font-size: .92rem; margin: 6px 0 6px; }
-    input[type=file] { padding: 6px; background: var(--gris); }
 
     label { display: block; font-size: .85rem; margin: 10px 0 4px; font-weight: 600; }
     input, select {
@@ -97,6 +97,19 @@
 
     #estado { font-size: .85rem; margin-top: 10px; min-height: 1.2em; }
     .error { color: #b71c1c; }
+    /* Al imprimir (reporte PDF): ocultar controles y dejar solo mapa, tarjetas, gráficas y tablas */
+    @media print {
+      body { background: white; }
+      .contenedor { display: block; padding: 0; }
+      aside, button, input, select, label, .leaflet-control-zoom, .leaflet-control-layers { display: none !important; }
+      .panel { break-inside: avoid; border: none; padding: 6px 0; }
+      #mapa { height: 420px; break-inside: avoid; }
+      #encabezadoReporte { display: block !important; }
+      .graficas { grid-template-columns: 1fr 1fr; }
+    }
+    .raster-pixelado { image-rendering: pixelated; image-rendering: crisp-edges; }
+    .barra-leyenda { height: 14px; border-radius: 3px; border: 1px solid #ccc; }
+    #encabezadoReporte { display: none; margin-bottom: 8px; font-size: .9rem; }
     footer { text-align: center; font-size: .78rem; color: #5b6b5b; padding: 10px 14px 20px; }
     footer a { color: var(--verde); }
   </style>
@@ -172,10 +185,26 @@
       <button id="btnCSV" class="secundario">⬇️ Descargar registros GBIF (CSV)</button>
       <button id="btnCSVClima" class="secundario">⬇️ Descargar clima diario (CSV)</button>
       <div id="estado"></div>
+
+      <h2 style="margin-top:18px">4. Descargas</h2>
+      <p class="ayuda">Primero haz una consulta. Las imágenes incluyen título, lugar, fecha y fuente.</p>
+      <button id="btnMapaPNG" class="secundario" type="button">🗺️ Mapa (imagen PNG)</button>
+      <button id="btnReportePDF" class="secundario" type="button">📄 Reporte completo (PDF / imprimir)</button>
+      <button id="btnExcel" class="secundario" type="button">📊 Todas las tablas (Excel .xlsx)</button>
+      <label for="graficaDescarga">Imagen de gráfica</label>
+      <select id="graficaDescarga">
+        <option value="clima">Clima mensual (lluvia, temperatura, HR)</option>
+        <option value="climaDiario">Clima diario (nueva figura)</option>
+        <option value="ndvi">Serie de NDVI</option>
+        <option value="anios">Registros GBIF por año</option>
+      </select>
+      <button id="btnGraficaPNG" class="secundario" type="button">📈 Descargar gráfica (PNG)</button>
+      <div id="estadoDescarga" class="ayuda"></div>
     </aside>
 
     <!-- ====== PANEL DERECHO: MAPA Y RESULTADOS ====== -->
     <main>
+      <div id="encabezadoReporte"></div>
       <div id="mapa"></div>
 
       <div class="tarjetas">
@@ -213,77 +242,70 @@
         </table>
       </div>
 
-      <!-- ====== MÓDULO: MUERTE DESCENDENTE DEL CAFETO ====== -->
-      <div class="panel" id="moduloPhoma" style="margin-top:14px">
-        <h2>☕ Muerte descendente del cafeto (<i>Phoma</i> spp.)</h2>
-
+      <!-- ====== MÓDULO: RASTER DE VARIABLES AMBIENTALES ====== -->
+      <div class="panel" id="moduloRaster" style="margin-top:14px">
+        <h2>🧭 Raster de variables ambientales de la zona</h2>
+        <p class="ayuda">Zona: el contorno del lugar buscado por nombre o, si no hay, el círculo del radio de búsqueda.
+          Se arma una cuadrícula y se consulta cada celda.</p>
         <div class="graficas">
-          <!-- A) Registros propios -->
           <div>
-            <h3>A. Tus registros (CSV o Excel)</h3>
-            <p class="ayuda">Columnas mínimas: <b>latitud</b>, <b>longitud</b>, <b>fecha</b> e <b>incidencia</b> (o severidad).
-              Opcional: finca, lote, municipio. Los nombres de columna se detectan solos; puedes corregirlos abajo.</p>
-            <input id="archivoPhoma" type="file" accept=".csv,.xlsx,.xls">
-            <button id="btnPlantilla" class="secundario" type="button">⬇️ Descargar plantilla de ejemplo</button>
-
-            <div id="mapeoColumnas" style="display:none">
-              <div class="fila">
-                <div><label>Latitud</label><select id="colLat"></select></div>
-                <div><label>Longitud</label><select id="colLon"></select></div>
-              </div>
-              <div class="fila">
-                <div><label>Fecha</label><select id="colFecha"></select></div>
-                <div><label>Incidencia / severidad</label><select id="colInc"></select></div>
-              </div>
-              <label>Identificador (finca, lote…)</label><select id="colId"></select>
-              <label for="ventanaDias">Días de clima antes de cada evaluación</label>
-              <input id="ventanaDias" type="number" min="7" max="120" value="30">
-              <button id="btnProcesarPhoma" type="button">📍 Ver en el mapa y cruzar con clima y altitud</button>
-              <button id="btnCSVPhoma" class="secundario" type="button">⬇️ Descargar registros enriquecidos (CSV)</button>
-            </div>
-            <div id="estadoPhoma" class="ayuda"></div>
-          </div>
-
-          <!-- B) GBIF -->
-          <div>
-            <h3>B. Registros abiertos en GBIF</h3>
-            <p class="ayuda">Busca ocurrencias georreferenciadas del género en Colombia. Ojo: varias especies antes llamadas
-              <i>Phoma</i> hoy están en otros géneros (p. ej. <i>Didymella</i>, <i>Boeremia</i>, <i>Stagonosporopsis</i>);
-              puedes escribir otro nombre.</p>
-            <label for="taxonPhoma">Taxón</label>
-            <input id="taxonPhoma" type="text" value="Phoma">
-            <label for="paisPhoma">País (código ISO)</label>
-            <input id="paisPhoma" type="text" value="CO" maxlength="2">
-            <button id="btnGBIFPhoma" type="button">🔎 Buscar en GBIF</button>
-            <div id="estadoGBIFPhoma" class="ayuda"></div>
-          </div>
-        </div>
-
-        <div id="resultadosPhoma" style="display:none; margin-top:14px">
-          <p class="ayuda" id="leyendaPhoma"></p>
-          <div class="graficas">
-            <div>
-              <label for="varRelacion">Relación de la incidencia con…</label>
-              <select id="varRelacion">
-                <option value="altitud">Altitud (m s.n.m.)</option>
-                <option value="tmed">Temperatura media (°C)</option>
+            <label for="varRaster">Variable</label>
+            <select id="varRaster">
+              <optgroup label="Terreno">
+                <option value="elev">Elevación (m s.n.m.)</option>
+              </optgroup>
+              <optgroup label="Temperatura">
+                <option value="tmed" selected>Temperatura media (°C)</option>
+                <option value="tmax">Temperatura máxima media (°C)</option>
                 <option value="tmin">Temperatura mínima media (°C)</option>
+                <option value="gdd">Grados-día, base 10 °C (°C·día)</option>
+              </optgroup>
+              <optgroup label="Agua">
                 <option value="lluvia">Lluvia acumulada (mm)</option>
                 <option value="diasLluvia">Días con lluvia ≥ 1 mm</option>
+                <option value="et0">Evapotranspiración de referencia ET0 (mm)</option>
+                <option value="balance">Balance hídrico: lluvia − ET0 (mm)</option>
+              </optgroup>
+              <optgroup label="Humedad">
                 <option value="hr">Humedad relativa media (%)</option>
-              </select>
-              <canvas id="grafPhoma"></canvas>
-              <p class="ayuda" id="notaCorrelacion"></p>
+                <option value="diasHR">Días con humedad relativa media ≥ 85 %</option>
+              </optgroup>
+              <optgroup label="Energía y viento">
+                <option value="rad">Radiación solar media (MJ/m²/día)</option>
+                <option value="viento">Viento máximo diario medio (km/h)</option>
+              </optgroup>
+            </select>
+            <div class="fila">
+              <div><label for="rasterDesde">Desde</label><input id="rasterDesde" type="date"></div>
+              <div><label for="rasterHasta">Hasta</label><input id="rasterHasta" type="date"></div>
             </div>
-            <div style="max-height:380px; overflow:auto">
-              <table>
-                <thead><tr><th>Registro</th><th>Fecha</th><th>Incid.</th><th>Alt. (m)</th><th>T med</th><th>T mín</th><th>Lluvia</th><th>HR</th></tr></thead>
-                <tbody id="tablaPhoma"></tbody>
-              </table>
-            </div>
+            <label for="resRaster">Resolución de la cuadrícula</label>
+            <select id="resRaster">
+              <option value="8">Baja – 8 celdas por lado (rápida)</option>
+              <option value="12" selected>Media – 12 celdas por lado</option>
+              <option value="16">Alta – 16 celdas por lado</option>
+              <option value="24">Muy alta – 24 celdas por lado (lenta)</option>
+            </select>
+            <p class="ayuda" id="costoRaster"></p>
+            <button id="btnRaster" type="button">🧭 Generar raster</button>
+            <div id="estadoRaster" class="ayuda"></div>
+          </div>
+          <div>
+            <div id="leyendaRaster"></div>
+            <div id="statsRaster" class="ayuda"></div>
+            <div id="valorRaster" class="ayuda"><i>Pasa el cursor sobre el raster para ver el valor de cada celda.</i></div>
+            <label for="opacidadRaster">Transparencia</label>
+            <input id="opacidadRaster" type="range" min="0.2" max="1" step="0.1" value="0.75">
+            <label style="display:flex; gap:8px; align-items:center; font-weight:600">
+              <input id="verRaster" type="checkbox" style="width:auto" checked> Mostrar raster en el mapa
+            </label>
+            <button id="btnASC" class="secundario" type="button">⬇️ Raster para SIG (.asc + .prj)</button>
+            <button id="btnCSVRaster" class="secundario" type="button">⬇️ Celdas con todas las variables (CSV)</button>
+            <button id="btnPNGRaster" class="secundario" type="button">🖼️ Imagen del raster con leyenda (PNG)</button>
           </div>
         </div>
       </div>
+
     </main>
   </div>
 
@@ -366,6 +388,7 @@ mapa.on('click', (e) => {
   document.getElementById('lat').value = e.latlng.lat.toFixed(4);
   document.getElementById('lon').value = e.latlng.lng.toFixed(4);
   if (limiteLugar) { mapa.removeLayer(limiteLugar); limiteLugar = null; }  // quitar contorno de una búsqueda anterior
+  geoLugar = null;
   consultar();
 });
 
@@ -375,6 +398,8 @@ mapa.on('click', (e) => {
    ===================================================================== */
 
 let ultimosRegistros = [];  // se guardan para exportar a CSV
+let ultimoConteo = null;     // conteo por año (para Excel)
+let ultimoNDVI = [], fuenteNDVI = '';
 
 // Convierte un nombre (ej. "Fusarium") en el código taxonómico de GBIF
 async function buscarTaxon(nombre) {
@@ -551,6 +576,7 @@ function resumirPorMes(dias) {
    ===================================================================== */
 
 let limiteLugar = null;       // contorno del municipio/departamento en el mapa
+let geoLugar = null;          // geometría (GeoJSON) del lugar buscado
 let lugaresEncontrados = [];
 
 async function buscarLugar() {
@@ -604,6 +630,8 @@ function elegirLugar(i) {
 
   // Dibujar el contorno del lugar (si OpenStreetMap lo tiene)
   if (limiteLugar) mapa.removeLayer(limiteLugar);
+  limiteLugar = null;
+  geoLugar = (l.geojson && /Polygon/.test(l.geojson.type)) ? l.geojson : null;   // para recortar el raster
   if (l.geojson && l.geojson.type !== 'Point') {
     limiteLugar = L.geoJSON(l.geojson, { style: { color: '#1565c0', weight: 2, fillOpacity: 0.05 } }).addTo(mapa);
   }
@@ -746,6 +774,7 @@ async function consultar() {
     }
     const { conteo, registros } = await consultarGBIF(lat, lon, radio, taxonKey, anioIni, anioFin);
     ultimosRegistros = registros.results;
+    ultimoConteo = conteo;
     document.getElementById('totRegistros').textContent = conteo.count.toLocaleString('es');
     dibujarAnios(conteo.facets);
     dibujarPuntos(ultimosRegistros);
@@ -772,6 +801,7 @@ async function consultar() {
   document.getElementById('notaNDVI').textContent = 'Cargando serie de NDVI (puede tardar unos segundos)…';
   try {
     const { serie, fuente } = await consultarNDVI(lat, lon);
+    ultimoNDVI = serie; fuenteNDVI = fuente;
     dibujarNDVI(serie);
     document.getElementById('notaNDVI').textContent =
       `${serie.length} imágenes de 16 días (fuente: ${fuente}). NDVI > 0.6 = vegetación densa; < 0.2 = suelo desnudo, agua o nubes.`;
@@ -819,253 +849,548 @@ document.getElementById('lugar').addEventListener('keydown', e => { if (e.key ==
 document.getElementById('resultadosLugar').addEventListener('change', e => elegirLugar(+e.target.value));
 
 /* =====================================================================
-   PARTE 7: MUERTE DESCENDENTE DEL CAFETO (Phoma spp.)
-   A) Registros propios: leer archivo → mapa → altitud y clima previo → relación
-   B) Registros abiertos de GBIF
+   PARTE 6B: RASTER DE VARIABLES AMBIENTALES
+   Cuadrícula sobre la zona → altitud (Open-Meteo Elevation, Copernicus DEM 90 m)
+   y clima diario por celda (Open-Meteo, reanálisis ERA5 con corrección por altitud)
    ===================================================================== */
 
-let filasPhoma = [];          // filas tal como vienen del archivo
-let registrosPhoma = [];      // registros procesados y enriquecidos
-const capaPhoma = L.layerGroup().addTo(mapa);
-const capaGBIFPhoma = L.layerGroup().addTo(mapa);
-let graficoPhoma = null;
+const VARIABLES_RASTER = {
+  elev:       { nombre: 'Elevación', unidad: 'm s.n.m.', rampa: 'terreno', clima: false },
+  tmed:       { nombre: 'Temperatura media', unidad: '°C', rampa: 'temp', clima: true },
+  tmax:       { nombre: 'Temperatura máxima media', unidad: '°C', rampa: 'temp', clima: true },
+  tmin:       { nombre: 'Temperatura mínima media', unidad: '°C', rampa: 'temp', clima: true },
+  gdd:        { nombre: 'Grados-día base 10 °C', unidad: '°C·día', rampa: 'calor', clima: true },
+  lluvia:     { nombre: 'Lluvia acumulada', unidad: 'mm', rampa: 'lluvia', clima: true },
+  diasLluvia: { nombre: 'Días con lluvia ≥ 1 mm', unidad: 'días', rampa: 'lluvia', clima: true },
+  et0:        { nombre: 'Evapotranspiración ET0', unidad: 'mm', rampa: 'calor', clima: true },
+  balance:    { nombre: 'Balance hídrico (lluvia − ET0)', unidad: 'mm', rampa: 'divergente', clima: true },
+  hr:         { nombre: 'Humedad relativa media', unidad: '%', rampa: 'humedad', clima: true },
+  diasHR:     { nombre: 'Días con HR media ≥ 85 %', unidad: 'días', rampa: 'humedad', clima: true },
+  rad:        { nombre: 'Radiación solar media', unidad: 'MJ/m²/día', rampa: 'calor', clima: true },
+  viento:     { nombre: 'Viento máximo diario medio', unidad: 'km/h', rampa: 'viridis', clima: true }
+};
+const RAMPAS = {
+  temp:       ['#313695', '#4575b4', '#74add1', '#abd9e9', '#fee090', '#fdae61', '#f46d43', '#d73027', '#a50026'],
+  lluvia:     ['#f7fbff', '#c6dbef', '#6baed6', '#2171b5', '#08306b'],
+  humedad:    ['#fff7bc', '#d9f0a3', '#78c679', '#238443', '#004529'],
+  terreno:    ['#1a9850', '#91cf60', '#d9ef8b', '#fee08b', '#d8b365', '#8c510a', '#f5f5f5'],
+  calor:      ['#ffffcc', '#feb24c', '#fd8d3c', '#e31a1c', '#800026'],
+  divergente: ['#b2182b', '#f4a582', '#f7f7f7', '#92c5de', '#2166ac'],
+  viridis:    ['#440154', '#3b528b', '#21918c', '#5ec962', '#fde725']
+};
 
-// --- Utilidades ---
-// Números con coma decimal ("4,6") o punto ("4.6")
-function aNumero(v) {
-  if (typeof v === 'number') return v;
-  if (v == null || v === '') return NaN;
-  let s = String(v).trim().replace('%', '');
-  if (s.includes(',') && !s.includes('.')) s = s.replace(',', '.');
-  return parseFloat(s);
+let raster = null;            // { celda, nx, ny, oeste, sur, celdas: [...], desde, hasta }
+let capaRaster = null;
+
+// Fechas por defecto: últimos 90 días disponibles
+(() => {
+  const fin = new Date(); fin.setDate(fin.getDate() - 7);
+  const ini = new Date(fin); ini.setDate(ini.getDate() - 90);
+  document.getElementById('rasterHasta').value = fin.toISOString().slice(0, 10);
+  document.getElementById('rasterDesde').value = ini.toISOString().slice(0, 10);
+})();
+
+// --- Utilidades de color ---
+function hexARgb(h) { const n = parseInt(h.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; }
+function colorRampa(rampa, t) {
+  const c = RAMPAS[rampa]; t = Math.max(0, Math.min(1, t));
+  const p = t * (c.length - 1), i = Math.min(c.length - 2, Math.floor(p)), f = p - i;
+  const a = hexARgb(c[i]), b = hexARgb(c[i + 1]);
+  return a.map((v, k) => Math.round(v + (b[k] - v) * f));
 }
-// Fechas: objeto Date de Excel, "2024-05-10", "10/05/2024" o "10-05-2024" (día/mes/año)
-function aFecha(v) {
-  if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0, 10);
-  const s = String(v ?? '').trim();
-  let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
-  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
-  m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
-  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+
+// --- ¿Un punto está dentro del polígono del lugar? (algoritmo de rayo) ---
+function dentroAnillo(x, y, anillo) {
+  let dentro = false;
+  for (let i = 0, j = anillo.length - 1; i < anillo.length; j = i++) {
+    const [xi, yi] = anillo[i], [xj, yj] = anillo[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) dentro = !dentro;
+  }
+  return dentro;
+}
+function dentroPoligono(lon, lat, geo) {
+  const poligonos = geo.type === 'Polygon' ? [geo.coordinates] : geo.coordinates;
+  return poligonos.some(p => dentroAnillo(lon, lat, p[0]) && !p.slice(1).some(h => dentroAnillo(lon, lat, h)));
+}
+
+// --- Construir la cuadrícula sobre la zona ---
+function construirCuadricula() {
+  const n = parseInt(document.getElementById('resRaster').value);
+  const lat = parseFloat(document.getElementById('lat').value);
+  const lon = parseFloat(document.getElementById('lon').value);
+  const radioKm = parseFloat(document.getElementById('radio').value);
+  let limites, dentro;
+  if (geoLugar) {
+    limites = L.geoJSON(geoLugar).getBounds();
+    dentro = (la, lo) => dentroPoligono(lo, la, geoLugar);
+  } else {
+    limites = L.latLng(lat, lon).toBounds(radioKm * 2000);
+    dentro = (la, lo) => mapa.distance([lat, lon], [la, lo]) <= radioKm * 1000;
+  }
+  const oeste = limites.getWest(), sur = limites.getSouth();
+  // Celdas cuadradas en grados (necesario para el formato ASCII Grid)
+  const celda = Math.max(limites.getEast() - oeste, limites.getNorth() - sur) / n;
+  const nx = Math.max(1, Math.ceil((limites.getEast() - oeste) / celda));
+  const ny = Math.max(1, Math.ceil((limites.getNorth() - sur) / celda));
+  const celdas = [];
+  for (let fila = 0; fila < ny; fila++) {            // fila 0 = norte
+    for (let col = 0; col < nx; col++) {
+      const cLat = sur + (ny - fila - 0.5) * celda, cLon = oeste + (col + 0.5) * celda;
+      celdas.push({ fila, col, lat: +cLat.toFixed(5), lon: +cLon.toFixed(5), dentro: dentro(cLat, cLon) });
+    }
+  }
+  return { celda, nx, ny, oeste, sur, celdas, zona: geoLugar ? 'contorno del lugar' : `círculo de ${radioKm} km` };
+}
+
+// Costo aproximado en "llamadas" de Open-Meteo (cada ubicación × cada 2 semanas de datos)
+function actualizarCosto() {
+  const n = parseInt(document.getElementById('resRaster').value);
+  const d1 = new Date(document.getElementById('rasterDesde').value), d2 = new Date(document.getElementById('rasterHasta').value);
+  const dias = Math.max(1, (d2 - d1) / 86400000 + 1);
+  const llamadas = Math.round(n * n * 0.8 * Math.max(1, dias / 14));
+  const minutos = Math.ceil(llamadas / 550);
+  document.getElementById('costoRaster').textContent =
+    `${Math.round(dias)} días · ~${Math.round(n * n * 0.8)} celdas · ≈ ${llamadas.toLocaleString('es')} llamadas a Open-Meteo ` +
+    `(límite gratuito: 600 por minuto y 10.000 por día). ` +
+    (minutos > 1 ? `Tardará unos ${minutos} minutos.` : 'Tardará menos de un minuto.') +
+    (llamadas > 9000 ? ' ⚠️ Supera el límite diario: reduce la resolución o el periodo.' : '');
+}
+['resRaster', 'rasterDesde', 'rasterHasta'].forEach(id => document.getElementById(id).addEventListener('change', actualizarCosto));
+actualizarCosto();
+
+const esperar = ms => new Promise(r => setTimeout(r, ms));
+function estadoRaster(t) { document.getElementById('estadoRaster').textContent = t; }
+
+// --- Consultar altitud de todas las celdas (100 por petición) ---
+async function cargarElevacion(r) {
+  const celdas = r.celdas.filter(c => c.dentro);
+  for (let i = 0; i < celdas.length; i += 100) {
+    const g = celdas.slice(i, i + 100);
+    const d = await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${g.map(c => c.lat).join(',')}` +
+                          `&longitude=${g.map(c => c.lon).join(',')}`).then(x => x.json());
+    g.forEach((c, k) => c.elev = d.elevation[k]);
+  }
+}
+
+// --- Consultar clima diario de todas las celdas (en grupos; si hay límite de uso, espera y reintenta) ---
+async function cargarClima(r) {
+  const celdas = r.celdas.filter(c => c.dentro);
+  const diarias = 'temperature_2m_mean,temperature_2m_max,temperature_2m_min,precipitation_sum,' +
+                  'relative_humidity_2m_mean,et0_fao_evapotranspiration,shortwave_radiation_sum,wind_speed_10m_max';
+  const dias = (new Date(r.hasta) - new Date(r.desde)) / 86400000 + 1;
+  const porGrupo = Math.max(1, Math.min(50, Math.floor(500 / Math.max(1, dias / 14))));   // ≤ ~500 llamadas por petición
+  for (let i = 0; i < celdas.length; i += porGrupo) {
+    const g = celdas.slice(i, i + porGrupo);
+    const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${g.map(c => c.lat).join(',')}` +
+                `&longitude=${g.map(c => c.lon).join(',')}&start_date=${r.desde}&end_date=${r.hasta}` +
+                `&daily=${diarias}&timezone=GMT`;
+    let datos = null;
+    for (let intento = 0; intento < 4 && !datos; intento++) {
+      const resp = await fetch(url);
+      if (resp.status === 429) {                       // límite por minuto: esperar y reintentar
+        for (let s = 60; s > 0; s--) { estadoRaster(`Límite de uso de Open-Meteo alcanzado. Reintentando en ${s} s… (${i} de ${celdas.length} celdas)`); await esperar(1000); }
+        continue;
+      }
+      const j = await resp.json();
+      if (j.error) throw new Error(j.reason);
+      datos = Array.isArray(j) ? j : [j];
+    }
+    if (!datos) throw new Error('Open-Meteo no respondió después de varios intentos.');
+    g.forEach((c, k) => c.diario = datos[k].daily);
+    estadoRaster(`Consultando clima… ${Math.min(i + porGrupo, celdas.length)} de ${celdas.length} celdas`);
+  }
+  r.climaCargado = true;
+}
+
+// --- Calcular una variable en una celda ---
+function valorCelda(c, v) {
+  if (v === 'elev') return c.elev ?? null;
+  const d = c.diario; if (!d) return null;
+  const lim = a => (a || []).filter(x => x != null);
+  const prom = a => { a = lim(a); return a.length ? a.reduce((s, x) => s + x, 0) / a.length : null; };
+  const suma = a => lim(a).reduce((s, x) => s + x, 0);
+  switch (v) {
+    case 'tmed': return prom(d.temperature_2m_mean);
+    case 'tmax': return prom(d.temperature_2m_max);
+    case 'tmin': return prom(d.temperature_2m_min);
+    case 'gdd': return suma(lim(d.temperature_2m_mean).map(t => Math.max(0, t - 10)));
+    case 'lluvia': return suma(d.precipitation_sum);
+    case 'diasLluvia': return lim(d.precipitation_sum).filter(x => x >= 1).length;
+    case 'et0': return suma(d.et0_fao_evapotranspiration);
+    case 'balance': return suma(d.precipitation_sum) - suma(d.et0_fao_evapotranspiration);
+    case 'hr': return prom(d.relative_humidity_2m_mean);
+    case 'diasHR': return lim(d.relative_humidity_2m_mean).filter(x => x >= 85).length;
+    case 'rad': return prom(d.shortwave_radiation_sum);
+    case 'viento': return prom(d.wind_speed_10m_max);
+  }
   return null;
 }
-// Ejecuta tareas de a pocas a la vez (para no saturar los servicios)
-async function enLotes(items, tamano, tarea) {
-  const salida = [];
-  for (let i = 0; i < items.length; i += tamano) {
-    salida.push(...await Promise.all(items.slice(i, i + tamano).map(tarea)));
+
+// --- Generar ---
+document.getElementById('btnRaster').addEventListener('click', generarRaster);
+// Si se escriben coordenadas a mano, el raster usa el círculo (ya no el contorno del lugar buscado)
+['lat', 'lon'].forEach(id => document.getElementById(id).addEventListener('change', () => {
+  geoLugar = null;
+  if (limiteLugar) { mapa.removeLayer(limiteLugar); limiteLugar = null; }
+}));
+
+async function generarRaster() {
+  const btn = document.getElementById('btnRaster');
+  const desde = document.getElementById('rasterDesde').value, hasta = document.getElementById('rasterHasta').value;
+  if (!desde || !hasta || desde > hasta) return estadoRaster('Revisa las fechas: "Desde" debe ser anterior a "Hasta".');
+  btn.disabled = true;
+  try {
+    const nuevo = construirCuadricula();
+    nuevo.desde = desde; nuevo.hasta = hasta;
+    if (!nuevo.celdas.some(c => c.dentro)) throw new Error('La zona es muy pequeña para esta resolución.');
+    raster = nuevo;
+    estadoRaster('Consultando altitud…');
+    await cargarElevacion(raster);
+    if (VARIABLES_RASTER[document.getElementById('varRaster').value].clima) await cargarClima(raster);
+    dibujarRaster();
+    estadoRaster(`Listo: ${raster.nx} × ${raster.ny} celdas de ${(raster.celda * 111).toFixed(1)} km aprox. · zona: ${raster.zona} · ${desde} a ${hasta}.`);
+  } catch (err) {
+    estadoRaster('Error: ' + err.message);
   }
-  return salida;
+  btn.disabled = false;
 }
-// Coeficiente de correlación de Pearson
-function pearson(x, y) {
-  const n = x.length, mx = x.reduce((a, b) => a + b, 0) / n, my = y.reduce((a, b) => a + b, 0) / n;
-  let sxy = 0, sx = 0, sy = 0;
-  for (let i = 0; i < n; i++) { sxy += (x[i] - mx) * (y[i] - my); sx += (x[i] - mx) ** 2; sy += (y[i] - my) ** 2; }
-  return sxy / Math.sqrt(sx * sy);
+
+// Al cambiar de variable: si ya hay raster, se recalcula (y se trae el clima si aún no estaba)
+document.getElementById('varRaster').addEventListener('change', async () => {
+  if (!raster) return;
+  const v = document.getElementById('varRaster').value;
+  if (VARIABLES_RASTER[v].clima && !raster.climaCargado) {
+    try { await cargarClima(raster); } catch (err) { return estadoRaster('Error: ' + err.message); }
+  }
+  dibujarRaster();
+});
+
+// --- Dibujar el raster en el mapa, con leyenda y estadísticas ---
+function dibujarRaster() {
+  const v = document.getElementById('varRaster').value, info = VARIABLES_RASTER[v];
+  raster.celdas.forEach(c => c.valor = c.dentro ? valorCelda(c, v) : null);
+  const vals = raster.celdas.map(c => c.valor).filter(x => x != null && !isNaN(x));
+  if (!vals.length) return estadoRaster('No hay valores para esta variable.');
+  const min = Math.min(...vals), max = Math.max(...vals), media = vals.reduce((a, b) => a + b, 0) / vals.length;
+  Object.assign(raster, { variable: v, min, max, media });
+
+  // Imagen: un píxel por celda; fuera de la zona = transparente
+  const lienzo = document.createElement('canvas');
+  lienzo.width = raster.nx; lienzo.height = raster.ny;
+  const ctx = lienzo.getContext('2d'), img = ctx.createImageData(raster.nx, raster.ny);
+  raster.celdas.forEach(c => {
+    const k = (c.fila * raster.nx + c.col) * 4;
+    if (c.valor == null || isNaN(c.valor)) { img.data[k + 3] = 0; return; }
+    const [r, g, b] = colorRampa(info.rampa, max > min ? (c.valor - min) / (max - min) : 0.5);
+    img.data.set([r, g, b, 255], k);
+  });
+  ctx.putImageData(img, 0, 0);
+  raster.lienzo = lienzo;
+
+  const limites = [[raster.sur, raster.oeste], [raster.sur + raster.ny * raster.celda, raster.oeste + raster.nx * raster.celda]];
+  if (capaRaster) mapa.removeLayer(capaRaster);
+  capaRaster = L.imageOverlay(lienzo.toDataURL(), limites, {
+    opacity: parseFloat(document.getElementById('opacidadRaster').value), className: 'raster-pixelado'
+  });
+  if (document.getElementById('verRaster').checked) capaRaster.addTo(mapa);
+  mapa.fitBounds(limites);
+
+  const f = x => Math.abs(x) >= 100 ? Math.round(x).toLocaleString('es') : x.toFixed(1);
+  document.getElementById('leyendaRaster').innerHTML =
+    `<b>${info.nombre} (${info.unidad})</b>
+     <div class="barra-leyenda" style="background:linear-gradient(to right, ${RAMPAS[info.rampa].join(',')})"></div>
+     <div style="display:flex; justify-content:space-between; font-size:.8rem"><span>${f(min)}</span><span>${f((min + max) / 2)}</span><span>${f(max)}</span></div>`;
+  document.getElementById('statsRaster').textContent =
+    `Mínimo ${f(min)} · Media ${f(media)} · Máximo ${f(max)} ${info.unidad} · ${vals.length} celdas` +
+    (info.clima ? ` · Periodo ${raster.desde} a ${raster.hasta}` : '');
 }
-function descargarTexto(texto, nombre) {
+
+// Valor bajo el cursor
+mapa.on('mousemove', (e) => {
+  if (!raster || raster.variable == null || !capaRaster || !mapa.hasLayer(capaRaster)) return;
+  const col = Math.floor((e.latlng.lng - raster.oeste) / raster.celda);
+  const fila = raster.ny - 1 - Math.floor((e.latlng.lat - raster.sur) / raster.celda);
+  const div = document.getElementById('valorRaster');
+  if (col < 0 || col >= raster.nx || fila < 0 || fila >= raster.ny) return;
+  const c = raster.celdas[fila * raster.nx + col], info = VARIABLES_RASTER[raster.variable];
+  div.innerHTML = c.valor == null ? 'Fuera de la zona.' :
+    `Celda (${c.lat}, ${c.lon}): <b>${c.valor.toFixed(1)} ${info.unidad}</b>` + (c.elev != null ? ` · altitud ${Math.round(c.elev)} m` : '');
+});
+
+document.getElementById('opacidadRaster').addEventListener('input', e => capaRaster && capaRaster.setOpacity(parseFloat(e.target.value)));
+document.getElementById('verRaster').addEventListener('change', e => {
+  if (!capaRaster) return;
+  e.target.checked ? capaRaster.addTo(mapa) : mapa.removeLayer(capaRaster);
+});
+
+// --- Descargas del raster ---
+function nombreRaster() { return `raster_${raster.variable}_${raster.desde}_${raster.hasta}`.replace(/-/g, ''); }
+
+function descargarArchivo(texto, nombre, tipo = 'text/plain') {
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob(['﻿' + texto], { type: 'text/csv;charset=utf-8' }));
+  a.href = URL.createObjectURL(new Blob([texto], { type: tipo }));
   a.download = nombre; a.click();
 }
 
-// --- Plantilla de ejemplo (datos ficticios, solo para ver el formato) ---
-document.getElementById('btnPlantilla').addEventListener('click', () => {
-  descargarTexto(
-    'finca,municipio,latitud,longitud,fecha,incidencia\n' +
-    'Finca ejemplo 1,El Tambo,2.4520,-76.8100,2025-03-15,12.5\n' +
-    'Finca ejemplo 2,Popayán,2.4400,-76.6100,2025-03-20,4.0\n',
-    'plantilla_muerte_descendente.csv');
+// ESRI ASCII Grid (.asc) + proyección WGS84 (.prj): se abre en QGIS, ArcGIS y R (terra::rast)
+document.getElementById('btnASC').addEventListener('click', async () => {
+  if (!raster || raster.variable == null) return estadoRaster('Primero genera un raster.');
+  const filas = [];
+  for (let f = 0; f < raster.ny; f++) {
+    filas.push(raster.celdas.slice(f * raster.nx, (f + 1) * raster.nx)
+      .map(c => c.valor == null || isNaN(c.valor) ? -9999 : +c.valor.toFixed(3)).join(' '));
+  }
+  const asc = [`ncols ${raster.nx}`, `nrows ${raster.ny}`, `xllcorner ${raster.oeste.toFixed(6)}`,
+               `yllcorner ${raster.sur.toFixed(6)}`, `cellsize ${raster.celda.toFixed(8)}`, 'NODATA_value -9999', ...filas].join('\n');
+  const prj = 'GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],' +
+              'PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]';
+  const base = nombreRaster();
+  descargarArchivo(asc, base + '.asc');
+  await esperar(500);
+  descargarArchivo(prj, base + '.prj');
+  estadoRaster(`Descargados ${base}.asc y ${base}.prj. Guárdalos en la misma carpeta y abre el .asc en QGIS.`);
 });
 
-// --- Leer el archivo y detectar columnas ---
-document.getElementById('archivoPhoma').addEventListener('change', async (e) => {
-  const archivo = e.target.files[0];
-  if (!archivo) return;
-  const estado = document.getElementById('estadoPhoma');
-  try {
-    const datos = await archivo.arrayBuffer();
-    const libro = XLSX.read(datos, { type: 'array', cellDates: true });
-    const hoja = libro.Sheets[libro.SheetNames[0]];
-    filasPhoma = XLSX.utils.sheet_to_json(hoja, { defval: '' });
-    if (!filasPhoma.length) throw new Error('el archivo no tiene filas');
-  } catch (err) {
-    estado.textContent = 'No se pudo leer el archivo: ' + err.message;
-    return;
-  }
+// CSV con todas las variables por celda
+function filasRaster() {
+  return raster.celdas.filter(c => c.dentro).map(c => {
+    const fila = { latitud: c.lat, longitud: c.lon };
+    for (const [k, info] of Object.entries(VARIABLES_RASTER)) {
+      if (info.clima && !raster.climaCargado) continue;
+      const v = valorCelda(c, k);
+      fila[`${k} (${info.unidad})`] = v == null ? '' : +v.toFixed(2);
+    }
+    return fila;
+  });
+}
+document.getElementById('btnCSVRaster').addEventListener('click', () => {
+  if (!raster) return estadoRaster('Primero genera un raster.');
+  const filas = filasRaster(), cols = Object.keys(filas[0]);
+  descargarArchivo('﻿' + [cols.join(','), ...filas.map(f => cols.map(c => f[c]).join(','))].join('\n'),
+                   nombreRaster() + '_celdas.csv', 'text/csv;charset=utf-8');
+});
 
-  const columnas = Object.keys(filasPhoma[0]);
-  const buscar = (patrones) => columnas.find(c => patrones.some(p => p.test(c))) || '';
-  const sugerencias = {
-    colLat:   buscar([/^lat/i, /latitud/i, /^y$/i]),
-    colLon:   buscar([/^lon/i, /^lng/i, /longitud/i, /^x$/i]),
-    colFecha: buscar([/fecha/i, /date/i, /^dia/i]),
-    colInc:   buscar([/incid/i, /sever/i, /porcent/i, /^%/]),
-    colId:    buscar([/finca/i, /lote/i, /predio/i, /^id/i, /c[oó]digo/i, /municip/i])
+// Imagen PNG del raster con leyenda
+document.getElementById('btnPNGRaster').addEventListener('click', () => {
+  if (!raster || !raster.lienzo) return estadoRaster('Primero genera un raster.');
+  const info = VARIABLES_RASTER[raster.variable], ctx = contexto();
+  const k = Math.max(4, Math.floor(900 / Math.max(raster.nx, raster.ny)));   // tamaño de cada celda en píxeles
+  const W = raster.nx * k, H = raster.ny * k, L_ = 70;
+  const c = document.createElement('canvas'); c.width = W; c.height = H + L_;
+  const x = c.getContext('2d');
+  x.fillStyle = 'white'; x.fillRect(0, 0, c.width, c.height);
+  x.imageSmoothingEnabled = false; x.drawImage(raster.lienzo, 0, 0, W, H);
+  // Leyenda
+  const grad = x.createLinearGradient(20, 0, W - 20, 0);
+  RAMPAS[info.rampa].forEach((col, i, a) => grad.addColorStop(i / (a.length - 1), col));
+  x.fillStyle = grad; x.fillRect(20, H + 14, W - 40, 16);
+  x.fillStyle = '#222'; x.font = '14px system-ui, Arial';
+  x.fillText(raster.min.toFixed(1), 20, H + 50);
+  x.textAlign = 'right'; x.fillText(raster.max.toFixed(1), W - 20, H + 50);
+  x.textAlign = 'center'; x.fillText(`${info.nombre} (${info.unidad})`, W / 2, H + 50);
+  const fig = armarFigura(c, `${info.nombre} – ${ctx.lugar}`,
+    `Zona: ${raster.zona} · ${raster.nx}×${raster.ny} celdas de ~${(raster.celda * 111).toFixed(1)} km` +
+    (info.clima ? ` · ${raster.desde} a ${raster.hasta}` : ''),
+    info.clima ? 'Fuente: Open-Meteo, API histórica (reanálisis ERA5 con ajuste por altitud). WGS84.'
+               : 'Fuente: Copernicus DEM GLO-90 vía Open-Meteo Elevation API. WGS84.');
+  descargarCanvas(fig, nombreRaster() + '.png');
+});
+
+/* =====================================================================
+   PARTE 7: DESCARGAS (mapa PNG, reporte PDF, Excel, gráficas PNG)
+   ===================================================================== */
+
+// Gráficas nítidas (el doble de píxeles) y con fondo blanco al exportarlas
+Chart.defaults.devicePixelRatio = 2;
+Chart.register({
+  id: 'fondoBlanco',
+  beforeDraw(chart) {
+    const c = chart.ctx; c.save();
+    c.globalCompositeOperation = 'destination-over';
+    c.fillStyle = 'white'; c.fillRect(0, 0, chart.width, chart.height);
+    c.restore();
+  }
+});
+
+function mostrarDescarga(t) { document.getElementById('estadoDescarga').textContent = t; }
+
+// Datos de la consulta actual (para títulos y hoja "Consulta" del Excel)
+function contexto() {
+  const v = id => document.getElementById(id).value;
+  return {
+    lugar: v('lugar') || 'Punto seleccionado',
+    lat: v('lat'), lon: v('lon'), radio: v('radio'),
+    especie: v('especie') || 'todas',
+    anios: `${v('anioIni')}–${v('anioFin')}`,
+    periodoClima: document.getElementById('periodoClima').selectedOptions[0].text,
+    hoy: new Date().toISOString().slice(0, 10)
   };
-  for (const [id, sugerida] of Object.entries(sugerencias)) {
-    const sel = document.getElementById(id);
-    sel.innerHTML = (id === 'colId' ? '<option value="">(ninguno)</option>' : '') +
-      columnas.map(c => `<option ${c === sugerida ? 'selected' : ''}>${c}</option>`).join('');
-  }
-  document.getElementById('mapeoColumnas').style.display = 'block';
-  estado.textContent = `${filasPhoma.length} filas leídas. Revisa las columnas y pulsa el botón.`;
-});
+}
 
-// --- Procesar: validar, poner en el mapa y enriquecer ---
-document.getElementById('btnProcesarPhoma').addEventListener('click', procesarPhoma);
+// Capas que están visibles en el mapa (para el pie de la imagen)
+function capasActivas() {
+  const capas = [];
+  const sat = document.getElementById('capa');
+  if (sat.value !== 'ninguna') capas.push(`${sat.selectedOptions[0].text} (${document.getElementById('fecha').value})`);
+  if (ultimosRegistros.length) capas.push('Registros GBIF del área (puntos naranja)');
+  if (capaRaster && mapa.hasLayer(capaRaster)) capas.push(`Raster: ${VARIABLES_RASTER[raster.variable].nombre}`);
+  return capas;
+}
 
-async function procesarPhoma() {
-  const estado = document.getElementById('estadoPhoma');
-  const c = id => document.getElementById(id).value;
-  const ventana = parseInt(c('ventanaDias')) || 30;
+// Arma una figura: título + subtítulo arriba, imagen en el medio, fuente abajo
+function armarFigura(imagen, titulo, subtitulo, fuente) {
+  const esc = imagen.width / 1000 > 1 ? imagen.width / 1000 : 1;   // tamaño de letra proporcional
+  const m = 20 * esc, alto = imagen.height + 100 * esc;
+  const c = document.createElement('canvas');
+  c.width = imagen.width + 2 * m; c.height = alto;
+  const x = c.getContext('2d');
+  x.fillStyle = 'white'; x.fillRect(0, 0, c.width, c.height);
+  x.fillStyle = '#1f2a1f';
+  x.font = `bold ${20 * esc}px system-ui, Arial`; x.fillText(titulo, m, 28 * esc);
+  x.font = `${13 * esc}px system-ui, Arial`; x.fillStyle = '#444'; x.fillText(subtitulo, m, 50 * esc);
+  x.drawImage(imagen, m, 62 * esc);
+  x.font = `${11 * esc}px system-ui, Arial`; x.fillStyle = '#666';
+  x.fillText(fuente.slice(0, 220), m, alto - 14 * esc);
+  return c;
+}
 
-  // 1) Validar filas
-  registrosPhoma = filasPhoma.map((f, i) => ({
-    id: c('colId') ? String(f[c('colId')]) : `Registro ${i + 1}`,
-    lat: aNumero(f[c('colLat')]),
-    lon: aNumero(f[c('colLon')]),
-    fecha: aFecha(f[c('colFecha')]),
-    incidencia: aNumero(f[c('colInc')])
-  })).filter(r => !isNaN(r.lat) && !isNaN(r.lon) && Math.abs(r.lat) <= 90 && Math.abs(r.lon) <= 180 && r.fecha && !isNaN(r.incidencia));
+function descargarCanvas(canvas, nombre) {
+  const a = document.createElement('a');
+  a.href = canvas.toDataURL('image/png');
+  a.download = nombre; a.click();
+}
 
-  const descartadas = filasPhoma.length - registrosPhoma.length;
-  if (!registrosPhoma.length) {
-    estado.textContent = 'Ninguna fila tiene coordenadas, fecha e incidencia válidas. Revisa las columnas elegidas.';
-    return;
-  }
-  if (registrosPhoma.length > 300) {
-    registrosPhoma = registrosPhoma.slice(0, 300);
-    estado.textContent = 'Se procesarán solo los primeros 300 registros. ';
-  }
-
-  // 2) Dibujar en el mapa, con color según la incidencia (cuartiles de tus datos)
-  const valores = registrosPhoma.map(r => r.incidencia).sort((a, b) => a - b);
-  const q = p => valores[Math.min(valores.length - 1, Math.floor(p * valores.length))];
-  const cortes = [q(0.25), q(0.5), q(0.75)];
-  const colores = ['#2e7d32', '#f9a825', '#ef6c00', '#b71c1c'];
-  const colorDe = v => colores[v <= cortes[0] ? 0 : v <= cortes[1] ? 1 : v <= cortes[2] ? 2 : 3];
-
-  capaPhoma.clearLayers();
-  registrosPhoma.forEach(r => {
-    r.marcador = L.circleMarker([r.lat, r.lon], {
-      radius: 7, color: '#3e2723', weight: 1, fillColor: colorDe(r.incidencia), fillOpacity: .9
-    }).bindPopup(`<b>${r.id}</b><br>Fecha: ${r.fecha}<br>Incidencia/severidad: ${r.incidencia}`).addTo(capaPhoma);
-  });
-  mapa.fitBounds(L.featureGroup(registrosPhoma.map(r => r.marcador)).getBounds().pad(0.2));
-  document.getElementById('leyendaPhoma').innerHTML =
-    `Colores en el mapa (cuartiles de tus datos): ` +
-    `<span style="color:${colores[0]}">●</span> ≤ ${cortes[0]} · <span style="color:${colores[1]}">●</span> ≤ ${cortes[1]} · ` +
-    `<span style="color:${colores[2]}">●</span> ≤ ${cortes[2]} · <span style="color:${colores[3]}">●</span> > ${cortes[2]}` +
-    (descartadas ? ` · ${descartadas} filas descartadas por datos incompletos.` : '');
-  document.getElementById('resultadosPhoma').style.display = 'block';
-
-  // 3) Altitud de cada punto (Open-Meteo Elevation, hasta 100 puntos por consulta)
-  estado.textContent += 'Consultando altitud…';
+// --- 1) Mapa en PNG ---
+document.getElementById('btnMapaPNG').addEventListener('click', async () => {
+  mostrarDescarga('Generando imagen del mapa…');
+  const ctx = contexto();
   try {
-    for (let i = 0; i < registrosPhoma.length; i += 100) {
-      const grupo = registrosPhoma.slice(i, i + 100);
-      const d = await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${grupo.map(r => r.lat).join(',')}` +
-                            `&longitude=${grupo.map(r => r.lon).join(',')}`).then(r => r.json());
-      grupo.forEach((r, j) => r.altitud = Math.round(d.elevation[j]));
-    }
-  } catch (err) { console.warn('Altitud:', err); }
-
-  // 4) Clima de los días previos a cada evaluación (Open-Meteo, 4 consultas a la vez)
-  let hechos = 0;
-  await enLotes(registrosPhoma, 4, async r => {
-    try {
-      const fin = new Date(r.fecha + 'T12:00:00');
-      const inicio = new Date(fin); inicio.setDate(inicio.getDate() - ventana);
-      const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${r.lat}&longitude=${r.lon}` +
-        `&start_date=${inicio.toISOString().slice(0, 10)}&end_date=${r.fecha}` +
-        `&daily=temperature_2m_mean,temperature_2m_min,precipitation_sum,relative_humidity_2m_mean&timezone=auto`;
-      const d = (await fetch(url).then(x => x.json())).daily;
-      const prom = a => { const v = a.filter(x => x != null); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
-      r.tmed = +prom(d.temperature_2m_mean).toFixed(1);
-      r.tmin = +prom(d.temperature_2m_min).toFixed(1);
-      r.lluvia = +d.precipitation_sum.reduce((s, x) => s + (x || 0), 0).toFixed(1);
-      r.diasLluvia = d.precipitation_sum.filter(x => x >= 1).length;
-      r.hr = Math.round(prom(d.relative_humidity_2m_mean));
-    } catch (err) { console.warn('Clima', r.id, err); }
-    estado.textContent = `Consultando clima… ${++hechos} de ${registrosPhoma.length}`;
-  });
-
-  estado.textContent = `Listo: ${registrosPhoma.length} registros con altitud y clima de los ${ventana} días previos a cada evaluación.`;
-  llenarTablaPhoma();
-  dibujarRelacionPhoma();
-}
-
-function llenarTablaPhoma() {
-  const f = v => v ?? '–';
-  document.getElementById('tablaPhoma').innerHTML = registrosPhoma.map(r =>
-    `<tr><td>${r.id}</td><td>${r.fecha}</td><td>${r.incidencia}</td><td>${f(r.altitud)}</td>` +
-    `<td>${f(r.tmed)}</td><td>${f(r.tmin)}</td><td>${f(r.lluvia)}</td><td>${f(r.hr)}</td></tr>`).join('');
-}
-
-function dibujarRelacionPhoma() {
-  const v = document.getElementById('varRelacion').value;
-  const etiqueta = document.getElementById('varRelacion').selectedOptions[0].text;
-  const pares = registrosPhoma.filter(r => r[v] != null && !isNaN(r[v])).map(r => ({ x: r[v], y: r.incidencia }));
-  if (graficoPhoma) graficoPhoma.destroy();
-  graficoPhoma = new Chart(document.getElementById('grafPhoma'), {
-    type: 'scatter',
-    data: { datasets: [{ data: pares, backgroundColor: '#6d4c41' }] },
-    options: {
-      plugins: { legend: { display: false } },
-      scales: { x: { title: { display: true, text: etiqueta } }, y: { title: { display: true, text: 'Incidencia / severidad' } } }
-    }
-  });
-  const nota = document.getElementById('notaCorrelacion');
-  if (pares.length >= 3) {
-    const r = pearson(pares.map(p => p.x), pares.map(p => p.y));
-    nota.textContent = `Correlación de Pearson r = ${r.toFixed(2)} (n = ${pares.length}). ` +
-      'Es exploratoria: no controla otras variables ni la autocorrelación espacial o temporal.';
-  } else {
-    nota.textContent = 'Se necesitan al menos 3 registros con datos para calcular la correlación.';
-  }
-}
-document.getElementById('varRelacion').addEventListener('change', dibujarRelacionPhoma);
-
-document.getElementById('btnCSVPhoma').addEventListener('click', () => {
-  if (!registrosPhoma.length) return;
-  const ventana = document.getElementById('ventanaDias').value;
-  const cols = ['id', 'lat', 'lon', 'fecha', 'incidencia', 'altitud', 'tmed', 'tmin', 'lluvia', 'diasLluvia', 'hr'];
-  const enc = ['registro', 'latitud', 'longitud', 'fecha', 'incidencia', 'altitud_m',
-               `tmed_${ventana}d_C`, `tmin_${ventana}d_C`, `lluvia_${ventana}d_mm`, `dias_lluvia_${ventana}d`, `hr_${ventana}d_pct`];
-  const filas = registrosPhoma.map(r => cols.map(k => `"${String(r[k] ?? '').replace(/"/g, '""')}"`).join(','));
-  descargarTexto([enc.join(','), ...filas].join('\n'), 'muerte_descendente_enriquecido.csv');
-});
-
-// --- B) Búsqueda en GBIF ---
-document.getElementById('btnGBIFPhoma').addEventListener('click', async () => {
-  const estado = document.getElementById('estadoGBIFPhoma');
-  const nombre = document.getElementById('taxonPhoma').value.trim();
-  const pais = document.getElementById('paisPhoma').value.trim().toUpperCase();
-  estado.textContent = 'Buscando…';
-  try {
-    const t = await buscarTaxon(nombre);
-    const d = await fetch(`https://api.gbif.org/v1/occurrence/search?taxonKey=${t.key}&country=${pais}` +
-                          `&hasCoordinate=true&hasGeospatialIssue=false&limit=300`).then(r => r.json());
-    capaGBIFPhoma.clearLayers();
-    d.results.forEach(r => {
-      L.circleMarker([r.decimalLatitude, r.decimalLongitude], { radius: 6, color: '#6a1b9a', fillOpacity: .6, weight: 1 })
-        .bindPopup(`<b><i>${r.scientificName}</i></b><br>Fecha: ${r.eventDate ? r.eventDate.slice(0, 10) : 'N/D'}<br>` +
-                   `${r.locality || r.stateProvince || ''}<br><a href="https://www.gbif.org/occurrence/${r.key}" target="_blank">Ver en GBIF</a>`)
-        .addTo(capaGBIFPhoma);
+    const lienzo = await html2canvas(document.getElementById('mapa'), {
+      useCORS: true, backgroundColor: '#ffffff', scale: 2, logging: false,
+      ignoreElements: el => el.classList && (el.classList.contains('leaflet-control-zoom') || el.classList.contains('leaflet-control-layers'))
     });
-    if (d.results.length) {
-      mapa.fitBounds(L.featureGroup(capaGBIFPhoma.getLayers()).getBounds().pad(0.2));
-      estado.innerHTML = `<b>${d.count}</b> registros de <i>${t.nombre}</i> en ${pais} (puntos morados en el mapa).`;
-    } else {
-      estado.innerHTML = `No hay registros georreferenciados de <i>${t.nombre}</i> en ${pais}. ` +
-        'Es esperable: los registros de enfermedades en cultivos rara vez se publican en GBIF.';
-    }
+    const atribucion = document.querySelector('.leaflet-control-attribution')?.textContent || '';
+    const fig = armarFigura(lienzo, `Mapa – ${ctx.lugar}`,
+      `Centro ${ctx.lat}, ${ctx.lon} · Radio ${ctx.radio} km · Capas: ${capasActivas().join('; ') || 'solo mapa base'}`,
+      `Fuentes: ${atribucion} · Generado el ${ctx.hoy}`);
+    descargarCanvas(fig, `mapa_${ctx.hoy}.png`);
+    mostrarDescarga('Listo. Si alguna capa salió en blanco, ese servidor no permite copiar sus imágenes: usa "Reporte completo (PDF)".');
   } catch (err) {
-    estado.textContent = 'Error: ' + err.message;
+    mostrarDescarga('No se pudo generar la imagen del mapa: ' + err.message + '. Usa "Reporte completo (PDF)".');
   }
 });
+
+// --- 2) Reporte completo: usa la impresión del navegador (elige "Guardar como PDF") ---
+document.getElementById('btnReportePDF').addEventListener('click', () => {
+  const ctx = contexto();
+  document.getElementById('encabezadoReporte').innerHTML =
+    `<h2 style="margin:0">Dashboard ambiental – ${ctx.lugar}</h2>
+     Centro: ${ctx.lat}, ${ctx.lon} · Radio: ${ctx.radio} km · Taxón: ${ctx.especie} · Años: ${ctx.anios} ·
+     Clima: ${ctx.periodoClima} · Generado: ${ctx.hoy}<br>Capas: ${capasActivas().join('; ') || 'solo mapa base'}`;
+  window.print();
+});
+
+// --- 3) Excel con todas las tablas ---
+document.getElementById('btnExcel').addEventListener('click', () => {
+  const ctx = contexto();
+  const libro = XLSX.utils.book_new();
+  const agregar = (filas, nombre) => {
+    if (!filas || !filas.length) return;
+    const hoja = XLSX.utils.json_to_sheet(filas);
+    hoja['!cols'] = Object.keys(filas[0]).map(k => ({ wch: Math.max(12, k.length + 2) }));
+    XLSX.utils.book_append_sheet(libro, hoja, nombre);
+  };
+
+  agregar([
+    { Campo: 'Lugar', Valor: ctx.lugar }, { Campo: 'Latitud', Valor: ctx.lat }, { Campo: 'Longitud', Valor: ctx.lon },
+    { Campo: 'Radio (km)', Valor: ctx.radio }, { Campo: 'Taxón GBIF', Valor: ctx.especie }, { Campo: 'Años GBIF', Valor: ctx.anios },
+    { Campo: 'Periodo de clima', Valor: ctx.periodoClima }, { Campo: 'Fuente NDVI', Valor: fuenteNDVI || '–' },
+    { Campo: 'Capas en el mapa', Valor: capasActivas().join('; ') }, { Campo: 'Fecha de descarga', Valor: ctx.hoy },
+    { Campo: 'Fuentes', Valor: 'GBIF.org; Open-Meteo (ERA5); NASA MODIS MOD13Q1' }
+  ], 'Consulta');
+
+  agregar(ultimosRegistros.map(r => ({
+    gbif_id: r.key, nombre_cientifico: r.scientificName, especie: r.species, familia: r.family, reino: r.kingdom,
+    latitud: r.decimalLatitude, longitud: r.decimalLongitude, fecha: r.eventDate, anio: r.year,
+    pais: r.country, departamento: r.stateProvince, localidad: r.locality, tipo_registro: r.basisOfRecord
+  })), 'GBIF registros');
+
+  const anios = (ultimoConteo?.facets?.find(f => f.field === 'YEAR')?.counts || [])
+    .map(c => ({ anio: +c.name, registros: c.count })).sort((a, b) => a.anio - b.anio);
+  agregar(anios, 'GBIF por año');
+
+  agregar(ultimoClima.map(d => ({
+    fecha: d.fecha, temp_media_C: d.tmed, temp_max_C: d.tmax, temp_min_C: d.tmin, lluvia_mm: d.lluvia, humedad_rel_pct: d.hr
+  })), 'Clima diario');
+  if (ultimoClima.length) {
+    agregar(resumirPorMes(ultimoClima).map(m => ({
+      mes: m.mes, temp_media_C: m.tmed, temp_max_C: m.tmax, temp_min_C: m.tmin, lluvia_mm: m.lluvia, humedad_rel_pct: m.hr
+    })), 'Clima mensual');
+  }
+
+  agregar(ultimoNDVI.map(s => ({ fecha: s.fecha, ndvi: s.ndvi })), 'NDVI');
+
+  if (raster) agregar(filasRaster(), 'Raster celdas');
+
+  if (libro.SheetNames.length <= 1) return mostrarDescarga('Primero haz una consulta para tener datos que descargar.');
+  XLSX.writeFile(libro, `dashboard_ambiental_${ctx.hoy}.xlsx`);
+  mostrarDescarga(`Excel descargado con ${libro.SheetNames.length} hojas: ${libro.SheetNames.join(', ')}.`);
+});
+
+// --- 4) Gráficas en PNG ---
+document.getElementById('btnGraficaPNG').addEventListener('click', () => {
+  const tipo = document.getElementById('graficaDescarga').value;
+  const ctx = contexto();
+  const lugar = `${ctx.lugar} (${ctx.lat}, ${ctx.lon})`;
+  const opciones = {
+    clima: [graficoClima, `Clima mensual – ${ctx.lugar}`, `${lugar} · ${ctx.periodoClima}`,
+            'Fuente: Open-Meteo, API histórica (reanálisis ERA5, ECMWF). Barras: lluvia mensual (mm); líneas: temperatura (°C) y humedad relativa (%).'],
+    ndvi:  [graficoNDVI, `NDVI – ${ctx.lugar}`, `${lugar} · último año, compuestos de 16 días`,
+            `Fuente: NASA MODIS MOD13Q1 v6.1 (250 m) vía ${fuenteNDVI || 'Planetary Computer / ORNL DAAC'}.`],
+    anios: [graficoAnios, `Registros GBIF por año – ${ctx.lugar}`, `${lugar} · radio ${ctx.radio} km · taxón: ${ctx.especie}`,
+            `Fuente: GBIF.org, consultado el ${ctx.hoy}.`]
+  };
+
+  if (tipo === 'climaDiario') return figuraClimaDiario(ctx, lugar);
+  const [grafico, titulo, sub, fuente] = opciones[tipo];
+  if (!grafico) return mostrarDescarga('Esa gráfica todavía no tiene datos. Haz primero la consulta correspondiente.');
+  descargarCanvas(armarFigura(grafico.canvas, titulo, sub, fuente), `${tipo}_${ctx.hoy}.png`);
+  mostrarDescarga('Gráfica descargada.');
+});
+
+// Figura de clima diario (se dibuja aparte, en alta resolución, solo para descargar)
+function figuraClimaDiario(ctx, lugar) {
+  if (!ultimoClima.length) return mostrarDescarga('Primero haz una consulta para tener datos de clima.');
+  const lienzo = document.createElement('canvas');
+  lienzo.width = 1600; lienzo.height = 700;
+  const g = new Chart(lienzo, {
+    data: {
+      labels: ultimoClima.map(d => d.fecha),
+      datasets: [
+        { type: 'bar', label: 'Lluvia (mm/día)', data: ultimoClima.map(d => d.lluvia), backgroundColor: '#90caf9', yAxisID: 'yL', order: 3 },
+        { type: 'line', label: 'T máx (°C)', data: ultimoClima.map(d => d.tmax), borderColor: '#ef5350', pointRadius: 0, borderWidth: 1, yAxisID: 'yT' },
+        { type: 'line', label: 'T media (°C)', data: ultimoClima.map(d => d.tmed), borderColor: '#e65100', pointRadius: 0, borderWidth: 1.5, yAxisID: 'yT' },
+        { type: 'line', label: 'T mín (°C)', data: ultimoClima.map(d => d.tmin), borderColor: '#ffb74d', pointRadius: 0, borderWidth: 1, yAxisID: 'yT' },
+        { type: 'line', label: 'HR (%)', data: ultimoClima.map(d => d.hr), borderColor: '#2e7d32', pointRadius: 0, borderWidth: 1, yAxisID: 'yH' }
+      ]
+    },
+    options: {
+      responsive: false, animation: false, devicePixelRatio: 1,
+      scales: {
+        x: { ticks: { maxTicksLimit: 14 } },
+        yL: { position: 'left', beginAtZero: true, title: { display: true, text: 'Lluvia (mm/día)' } },
+        yT: { position: 'right', title: { display: true, text: '°C' }, grid: { drawOnChartArea: false } },
+        yH: { position: 'right', min: 0, max: 100, title: { display: true, text: 'HR %' }, grid: { drawOnChartArea: false } }
+      }
+    }
+  });
+  const fig = armarFigura(lienzo, `Clima diario – ${ctx.lugar}`,
+    `${lugar} · ${ultimoClima[0].fecha} a ${ultimoClima[ultimoClima.length - 1].fecha}`,
+    'Fuente: Open-Meteo, API histórica (reanálisis ERA5, ECMWF).');
+  descargarCanvas(fig, `clima_diario_${ctx.hoy}.png`);
+  g.destroy();
+  mostrarDescarga('Gráfica de clima diario descargada.');
+}
 </script>
 </body>
 </html>
