@@ -229,11 +229,23 @@
 // Crear el mapa centrado en las coordenadas iniciales
 const mapa = L.map('mapa').setView([4.6097, -74.0817], 8);
 
-// Mapa base de OpenStreetMap
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 18,
-  attribution: '© OpenStreetMap'
-}).addTo(mapa);
+// Mapas base. Se usan CARTO y Esri porque funcionan aunque el archivo se abra con doble clic.
+// (Los servidores de OpenStreetMap bloquean esas peticiones: "Access blocked / 403".)
+const mapasBase = {
+  'Calles (CARTO)': L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19, subdomains: 'abcd',
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · © <a href="https://carto.com/attributions">CARTO</a>'
+  }),
+  'Satélite (Esri)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19, attribution: 'Imágenes © Esri, Maxar, Earthstar Geographics'
+  }),
+  'Topográfico (Esri)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19, attribution: '© Esri y colaboradores'
+  })
+};
+mapasBase['Calles (CARTO)'].addTo(mapa);
+// Selector de mapa base (esquina superior derecha del mapa)
+L.control.layers(mapasBase, null, { position: 'topright' }).addTo(mapa);
 
 // Fecha por defecto para las capas satelitales: hace 10 días (las imágenes tardan en publicarse)
 const hoy = new Date();
@@ -408,9 +420,14 @@ async function buscarLugar() {
   const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(texto)}` +
               `&format=json&limit=6&accept-language=es&polygon_geojson=1&polygon_threshold=0.005`;
   try {
-    lugaresEncontrados = await fetch(url).then(r => r.json());
+    lugaresEncontrados = await fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
   } catch (err) {
-    return mostrarEstado('No se pudo conectar con el buscador de lugares.', true);
+    // Respaldo: si Nominatim bloquea la petición (p. ej. archivo abierto con doble clic), se usa Photon
+    try {
+      lugaresEncontrados = await buscarLugarPhoton(texto);
+    } catch (err2) {
+      return mostrarEstado('No se pudo conectar con el buscador de lugares.', true);
+    }
   }
   const lista = document.getElementById('resultadosLugar');
   if (!lugaresEncontrados.length) {
@@ -421,6 +438,22 @@ async function buscarLugar() {
   lista.innerHTML = lugaresEncontrados.map((l, i) => `<option value="${i}">${l.display_name}</option>`).join('');
   lista.style.display = lugaresEncontrados.length > 1 ? 'block' : 'none';
   elegirLugar(0);
+}
+
+// Buscador de respaldo (Photon, también basado en OpenStreetMap). No trae contornos, solo el recuadro.
+async function buscarLugarPhoton(texto) {
+  const d = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(texto)}&limit=6`).then(r => r.json());
+  return d.features.map(f => {
+    const p = f.properties, [lon, lat] = f.geometry.coordinates;
+    // extent de Photon = [oeste, norte, este, sur]; si no existe, recuadro pequeño alrededor del punto
+    const e = p.extent || [lon - 0.05, lat + 0.05, lon + 0.05, lat - 0.05];
+    return {
+      lat, lon,
+      display_name: [p.name, p.county, p.state, p.country].filter(Boolean).join(', '),
+      boundingbox: [e[3], e[1], e[0], e[2]],  // mismo orden que Nominatim: sur, norte, oeste, este
+      geojson: null
+    };
+  });
 }
 
 function elegirLugar(i) {
