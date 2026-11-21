@@ -5,14 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard Ambiental – Biodiversidad y Vegetación</title>
 
-  <!-- Librerías externas (se cargan desde internet, no hay que instalar nada) -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Librerías externas (se cargan desde internet, no hay que instalar nada).
+       Cada una tiene servidores de respaldo: si el primero no responde, se intenta con el siguiente. -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"
+        onerror="this.onerror=null; this.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'">
+
+  <!-- Leaflet (mapa) -->
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>window.L || document.write('<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>');</script>
+  <script>window.L || document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"><\/script>');</script>
+
+  <!-- Chart.js (gráficas) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <!-- SheetJS: para leer archivos de Excel y CSV -->
+  <script>window.Chart || document.write('<script src="https://unpkg.com/chart.js@4.4.1/dist/chart.umd.min.js"><\/script>');</script>
+  <script>window.Chart || document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"><\/script>');</script>
+
+  <!-- SheetJS (Excel) -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <!-- html2canvas: para convertir el mapa en imagen -->
+  <script>window.XLSX || document.write('<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"><\/script>');</script>
+  <script>window.XLSX || document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>');</script>
+
+  <!-- html2canvas (imagen del mapa) -->
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script>window.html2canvas || document.write('<script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"><\/script>');</script>
+  <script>window.html2canvas || document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script>');</script>
 
   <style>
     /* ====== ESTILOS (apariencia) ====== */
@@ -321,6 +337,30 @@
   </footer>
 
 <script>
+/* =====================================================================
+   PARTE 0: VERIFICAR QUE LAS LIBRERÍAS CARGARON
+   Si el mapa (Leaflet) o las gráficas (Chart.js) no cargaron, se muestra un aviso claro
+   en vez de errores como "L is not defined".
+   ===================================================================== */
+(() => {
+  const faltan = [];
+  if (!window.L) faltan.push('Leaflet (mapa)');
+  if (!window.Chart) faltan.push('Chart.js (gráficas)');
+  if (!window.XLSX) faltan.push('SheetJS (Excel)');
+  if (!window.html2canvas) faltan.push('html2canvas (imagen del mapa)');
+  if (!faltan.length) return;
+  const aviso = document.createElement('div');
+  aviso.style.cssText = 'background:#fff3e0;border:2px solid #ef6c00;color:#5d2c00;padding:14px 18px;margin:14px;border-radius:8px;font-size:.95rem';
+  aviso.innerHTML = `<b>⚠️ No se pudieron cargar: ${faltan.join(', ')}.</b><br>
+    El dashboard descarga estas librerías de internet al abrirse. Revisa que:<br>
+    1) tengas conexión a internet; 2) no estés viendo el archivo dentro de una vista previa (GitHub, correo, Drive, un editor):
+    ábrelo directamente en Chrome, Edge o Firefox, o desde tu página de GitHub Pages;
+    3) tu red (universidad, empresa) o un bloqueador de anuncios no bloquee <i>cdn.jsdelivr.net</i>, <i>unpkg.com</i> o <i>cdnjs.cloudflare.com</i>.<br>
+    Luego recarga la página (Ctrl + F5).`;
+  document.body.prepend(aviso);
+})();
+if (!window.L || !window.Chart) throw new Error('Faltan librerías: revisa el aviso en la parte superior de la página.');
+
 /* =====================================================================
    PARTE 1: EL MAPA
    ===================================================================== */
