@@ -31,117 +31,233 @@
   <script>window.html2canvas || document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script>');</script>
 
   <style>
-    /* ====== ESTILOS (apariencia) ====== */
+    /* ====== ESTILOS (apariencia inspirada en Windows 11 / Fluent) ====== */
     :root {
-      --verde: #2e7d32;
-      --verde-claro: #e8f5e9;
-      --gris: #f4f6f4;
-      --texto: #1f2a1f;
-      --borde: #d5ddd5;
+      --acento: #0067c0;          /* azul de acento de Windows 11 */
+      --acento-hover: #1975c5;
+      --acento-oscuro: #003e92;
+      --acento-suave: #e9f2fc;
+      --fondo: #f0f4f9;           /* fondo tipo "Mica" claro con tinte azul */
+      --superficie: #ffffff;
+      --control: #fbfbfb;
+      --texto: #1b1b1b;
+      --texto-2: #5c6670;
+      --linea: rgba(0, 0, 0, 0.07);
+      --linea-fuerte: rgba(0, 0, 0, 0.42);
+      --radio: 8px;
+      --sombra: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 40, 90, 0.05);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Roboto, Arial, sans-serif;
+      font-size: 14px;
       color: var(--texto);
-      background: var(--gris);
+      background: var(--fondo);
+      -webkit-font-smoothing: antialiased;
     }
     header {
-      background: var(--verde);
-      color: white;
-      padding: 14px 20px;
+      text-align: center;
+      padding: 26px 20px 8px;
     }
-    header h1 { margin: 0; font-size: 1.3rem; }
-    header p  { margin: 4px 0 0; font-size: .9rem; opacity: .9; }
+    header h1 {
+      margin: 0;
+      font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+      font-size: 1.55rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    header::after {                 /* línea fina de acento bajo el título */
+      content: ""; display: block; width: 44px; height: 3px; border-radius: 2px;
+      background: var(--acento); margin: 12px auto 0;
+    }
 
     .contenedor {
       display: grid;
-      grid-template-columns: 320px 1fr;
-      gap: 14px;
-      padding: 14px;
+      grid-template-columns: 310px 1fr;
+      gap: 16px;
+      padding: 16px 20px 8px;
+      max-width: 1500px;
+      margin: 0 auto;
     }
-    @media (max-width: 900px) { .contenedor { grid-template-columns: 1fr; } }
+    @media (max-width: 900px) { .contenedor { grid-template-columns: 1fr; padding: 12px; } }
+
+    aside.panel { position: sticky; top: 16px; align-self: start; max-height: calc(100vh - 32px); overflow-y: auto; }
+    @media (max-width: 900px) { aside.panel { position: static; max-height: none; } }
 
     .panel {
-      background: white;
-      border: 1px solid var(--borde);
-      border-radius: 10px;
-      padding: 14px;
+      background: var(--superficie);
+      border: 1px solid var(--linea);
+      border-radius: var(--radio);
+      box-shadow: var(--sombra);
+      padding: 18px;
     }
-    .panel h2 { font-size: 1rem; margin: 0 0 10px; color: var(--verde); }
+    .panel h2 {
+      font-size: .95rem;
+      font-weight: 600;
+      margin: 0 0 12px;
+      color: var(--texto);
+    }
+    aside h2 {
+      font-size: .72rem !important;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--texto-2) !important;
+      padding-top: 14px;
+      border-top: 1px solid var(--linea);
+    }
+    aside h2:first-child { border-top: none; padding-top: 0; }
 
-    label { display: block; font-size: .85rem; margin: 10px 0 4px; font-weight: 600; }
+    label { display: block; font-size: .8rem; margin: 12px 0 5px; font-weight: 500; color: var(--texto); }
+
+    /* Cuadros de texto y listas: estilo TextBox de Windows 11 */
     input, select {
       width: 100%;
-      padding: 7px 8px;
-      border: 1px solid var(--borde);
-      border-radius: 6px;
-      font-size: .9rem;
+      height: 32px;
+      padding: 4px 10px;
+      font: inherit;
+      font-size: .875rem;
+      color: var(--texto);
+      background: var(--control);
+      border: 1px solid var(--linea);
+      border-bottom: 1px solid var(--linea-fuerte);
+      border-radius: 4px;
+      outline: none;
+      transition: background .1s;
     }
+    input:hover, select:hover { background: #f6f6f6; }
+    input:focus, select:focus {
+      background: #fff;
+      border-bottom: 2px solid var(--acento);
+      padding-bottom: 3px;
+    }
+    input[type=range] { height: auto; padding: 0; border: none; background: none; accent-color: var(--acento); }
+    input[type=checkbox] { height: auto; accent-color: var(--acento); }
+    input[type=date] { padding-right: 6px; }
+
     .fila { display: flex; gap: 8px; }
     .fila > div { flex: 1; }
+
+    /* Botones: principal (acento) y estándar */
     button {
       margin-top: 14px;
       width: 100%;
-      padding: 10px;
-      background: var(--verde);
-      color: white;
-      border: none;
-      border-radius: 6px;
-      font-size: .95rem;
+      min-height: 32px;
+      padding: 6px 12px;
+      font: inherit;
+      font-size: .875rem;
+      font-weight: 500;
+      color: #fff;
+      background: var(--acento);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      border-bottom-color: rgba(0, 0, 0, 0.3);
+      border-radius: 4px;
       cursor: pointer;
+      transition: background .1s;
     }
-    button:hover { filter: brightness(1.1); }
-    button.secundario { background: white; color: var(--verde); border: 1px solid var(--verde); margin-top: 8px; }
+    button:hover { background: var(--acento-hover); }
+    button:active { background: #3183ca; color: rgba(255, 255, 255, .8); }
+    button:disabled { background: #c5c5c5; color: #fff; cursor: default; }
+    button.secundario {
+      margin-top: 6px;
+      color: var(--texto);
+      background: var(--control);
+      border: 1px solid var(--linea);
+      border-bottom-color: rgba(0, 0, 0, 0.16);
+      text-align: left;
+    }
+    button.secundario:hover { background: #f4f6f8; }
+    button.secundario:active { background: #eef1f4; color: var(--texto-2); }
     .buscador input { flex: 3; }
-    .buscador button { flex: 1; margin-top: 0; padding: 7px; }
-    .ayuda { font-size: .78rem; color: #5b6b5b; margin-top: 6px; }
+    .buscador button { flex: 1; margin-top: 0; width: auto; }
 
-    #mapa { height: 480px; border-radius: 10px; border: 1px solid var(--borde); }
+    .ayuda { font-size: .76rem; color: var(--texto-2); margin-top: 6px; line-height: 1.45; }
 
-    .tarjetas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0; }
-    .tarjeta { background: var(--verde-claro); border-radius: 8px; padding: 10px; text-align: center; }
-    .tarjeta .valor { font-size: 1.4rem; font-weight: 700; color: var(--verde); }
-    .tarjeta .nombre { font-size: .78rem; }
+    #mapa {
+      height: 500px;
+      border-radius: var(--radio);
+      border: 1px solid var(--linea);
+      box-shadow: var(--sombra);
+    }
+    .leaflet-bar, .leaflet-control-layers {
+      border: 1px solid var(--linea) !important;
+      border-radius: 6px !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, .1) !important;
+      overflow: hidden;
+    }
+    .leaflet-bar a { color: var(--texto) !important; }
+    .leaflet-container { font-family: inherit; }
 
-    .graficas { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    /* Indicadores */
+    .tarjetas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0; }
+    @media (max-width: 700px) { .tarjetas { grid-template-columns: repeat(2, 1fr); } }
+    .tarjeta {
+      background: var(--superficie);
+      border: 1px solid var(--linea);
+      border-radius: var(--radio);
+      box-shadow: var(--sombra);
+      padding: 14px 16px;
+      text-align: left;
+      display: flex; flex-direction: column-reverse; gap: 4px;
+    }
+    .tarjeta .valor {
+      font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+      font-size: 1.6rem; font-weight: 600; color: var(--acento-oscuro);
+      font-variant-numeric: tabular-nums;
+    }
+    .tarjeta .nombre { font-size: .76rem; color: var(--texto-2); }
+
+    .graficas { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     @media (max-width: 900px) { .graficas { grid-template-columns: 1fr; } }
+    main > .panel, .graficas > .panel { margin-bottom: 0; }
+    main > .panel { margin-top: 16px; }
 
-    table { width: 100%; border-collapse: collapse; font-size: .85rem; }
-    th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--borde); }
-    th { background: var(--verde-claro); }
+    table { width: 100%; border-collapse: collapse; font-size: .82rem; font-variant-numeric: tabular-nums; }
+    th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--linea); }
+    th { color: var(--texto-2); font-weight: 600; font-size: .76rem; background: transparent; }
+    tbody tr:hover { background: var(--acento-suave); }
 
-    #estado { font-size: .85rem; margin-top: 10px; min-height: 1.2em; }
-    .error { color: #b71c1c; }
+    #estado { font-size: .8rem; margin-top: 10px; min-height: 1.2em; color: var(--texto-2); }
+    .error { color: #c42b1c !important; }
+
+    a { color: var(--acento); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* Barra de desplazamiento fina */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, .18); border-radius: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+
     /* Al imprimir (reporte PDF): ocultar controles y dejar solo mapa, tarjetas, gráficas y tablas */
     @media print {
       body { background: white; }
+      header::after { display: none; }
       .contenedor { display: block; padding: 0; }
       aside, button, input, select, label, .leaflet-control-zoom, .leaflet-control-layers { display: none !important; }
-      .panel { break-inside: avoid; border: none; padding: 6px 0; }
-      #mapa { height: 420px; break-inside: avoid; }
+      .panel, .tarjeta { break-inside: avoid; box-shadow: none; }
+      .panel { border: none; padding: 6px 0; }
+      #mapa { height: 420px; break-inside: avoid; box-shadow: none; }
       #encabezadoReporte { display: block !important; }
       .graficas { grid-template-columns: 1fr 1fr; }
     }
     .raster-pixelado { image-rendering: pixelated; image-rendering: crisp-edges; }
-    .barra-leyenda { height: 14px; border-radius: 3px; border: 1px solid #ccc; }
+    .barra-leyenda { height: 12px; border-radius: 3px; border: 1px solid var(--linea); margin: 6px 0 4px; }
     #encabezadoReporte { display: none; margin-bottom: 8px; font-size: .9rem; }
-    footer { text-align: center; font-size: .78rem; color: #5b6b5b; padding: 10px 14px 20px; }
-    footer a { color: var(--verde); }
+    footer { text-align: center; font-size: .74rem; color: var(--texto-2); padding: 18px 20px 28px; line-height: 1.6; }
   </style>
 </head>
 
 <body>
   <header>
-    <h1>🌱 Dashboard Ambiental</h1>
-    <p>Registros de biodiversidad (GBIF) y vegetación satelital (NASA) para cualquier lugar del mundo</p>
+    <h1>Registros de biodiversidad y vegetación satelital</h1>
   </header>
 
   <div class="contenedor">
 
     <!-- ====== PANEL IZQUIERDO: FORMULARIO DE CONSULTA ====== -->
     <aside class="panel">
-      <h2>1. ¿Dónde consultar?</h2>
+      <h2>Ubicación</h2>
       <label for="lugar">Buscar por nombre</label>
       <div class="fila buscador">
         <input id="lugar" type="text" placeholder="Ej: Fusagasugá, Cundinamarca">
@@ -163,7 +279,7 @@
       <label for="radio">Radio de búsqueda (km)</label>
       <input id="radio" type="number" min="1" max="100" value="10">
 
-      <h2 style="margin-top:18px">2. ¿Qué buscar?</h2>
+      <h2>Filtros</h2>
       <label for="especie">Especie o grupo (opcional)</label>
       <input id="especie" type="text" placeholder="Ej: Phytophthora infestans, Fusarium, Insecta">
       <p class="ayuda">Vacío = todos los registros. Sirve cualquier nivel taxonómico (especie, género, familia…).</p>
@@ -187,7 +303,7 @@
         <option value="10">Últimos 10 años</option>
       </select>
 
-      <h2 style="margin-top:18px">3. Capa satelital</h2>
+      <h2>Imagen satelital</h2>
       <label for="capa">Capa sobre el mapa</label>
       <select id="capa">
         <option value="ninguna" selected>Ninguna (solo mapa base)</option>
@@ -197,16 +313,16 @@
       <label for="fecha">Fecha de la imagen</label>
       <input id="fecha" type="date">
 
-      <button id="btnConsultar">🔎 Consultar</button>
-      <button id="btnCSV" class="secundario">⬇️ Descargar registros GBIF (CSV)</button>
-      <button id="btnCSVClima" class="secundario">⬇️ Descargar clima diario (CSV)</button>
+      <button id="btnConsultar">Consultar</button>
+      <button id="btnCSV" class="secundario">Registros GBIF (CSV)</button>
+      <button id="btnCSVClima" class="secundario">Clima diario (CSV)</button>
       <div id="estado"></div>
 
-      <h2 style="margin-top:18px">4. Descargas</h2>
+      <h2>Descargas</h2>
       <p class="ayuda">Primero haz una consulta. Las imágenes incluyen título, lugar, fecha y fuente.</p>
-      <button id="btnMapaPNG" class="secundario" type="button">🗺️ Mapa (imagen PNG)</button>
-      <button id="btnReportePDF" class="secundario" type="button">📄 Reporte completo (PDF / imprimir)</button>
-      <button id="btnExcel" class="secundario" type="button">📊 Todas las tablas (Excel .xlsx)</button>
+      <button id="btnMapaPNG" class="secundario" type="button">Mapa (PNG)</button>
+      <button id="btnReportePDF" class="secundario" type="button">Reporte completo (PDF)</button>
+      <button id="btnExcel" class="secundario" type="button">Todas las tablas (Excel)</button>
       <label for="graficaDescarga">Imagen de gráfica</label>
       <select id="graficaDescarga">
         <option value="clima">Clima mensual (lluvia, temperatura, HR)</option>
@@ -214,7 +330,7 @@
         <option value="ndvi">Serie de NDVI</option>
         <option value="anios">Registros GBIF por año</option>
       </select>
-      <button id="btnGraficaPNG" class="secundario" type="button">📈 Descargar gráfica (PNG)</button>
+      <button id="btnGraficaPNG" class="secundario" type="button">Gráfica seleccionada (PNG)</button>
       <div id="estadoDescarga" class="ayuda"></div>
     </aside>
 
@@ -233,7 +349,7 @@
       </div>
 
       <div class="panel" style="margin-bottom:14px">
-        <h2>Clima mensual en el punto (Open-Meteo, reanálisis ERA5)</h2>
+        <h2>Clima mensual</h2>
         <canvas id="grafClima" height="90"></canvas>
         <p class="ayuda" id="notaClima">Barras = lluvia mensual (mm). Líneas = temperatura media, máxima y mínima (°C) y humedad relativa (%).</p>
       </div>
@@ -244,14 +360,14 @@
           <canvas id="grafAnios"></canvas>
         </div>
         <div class="panel">
-          <h2>Serie de NDVI en el punto (MODIS 250 m)</h2>
+          <h2>NDVI en el punto</h2>
           <canvas id="grafNDVI"></canvas>
           <p class="ayuda" id="notaNDVI"></p>
         </div>
       </div>
 
       <div class="panel" style="margin-top:14px">
-        <h2>Especies más registradas (según los registros descargados)</h2>
+        <h2>Especies más registradas</h2>
         <table>
           <thead><tr><th>#</th><th>Especie</th><th>Registros</th></tr></thead>
           <tbody id="tablaEspecies"><tr><td colspan="3">Haz una consulta para ver resultados.</td></tr></tbody>
@@ -260,7 +376,7 @@
 
       <!-- ====== MÓDULO: RASTER DE VARIABLES AMBIENTALES ====== -->
       <div class="panel" id="moduloRaster" style="margin-top:14px">
-        <h2>🧭 Raster de variables ambientales de la zona</h2>
+        <h2>Raster de variables ambientales</h2>
         <p class="ayuda">Zona: el contorno del lugar buscado por nombre o, si no hay, el círculo del radio de búsqueda.
           Se arma una cuadrícula y se consulta cada celda.</p>
         <div class="graficas">
@@ -303,7 +419,7 @@
               <option value="24">Muy alta – 24 celdas por lado (lenta)</option>
             </select>
             <p class="ayuda" id="costoRaster"></p>
-            <button id="btnRaster" type="button">🧭 Generar raster</button>
+            <button id="btnRaster" type="button">Generar raster</button>
             <div id="estadoRaster" class="ayuda"></div>
           </div>
           <div>
@@ -315,9 +431,9 @@
             <label style="display:flex; gap:8px; align-items:center; font-weight:600">
               <input id="verRaster" type="checkbox" style="width:auto" checked> Mostrar raster en el mapa
             </label>
-            <button id="btnASC" class="secundario" type="button">⬇️ Raster para SIG (.asc + .prj)</button>
-            <button id="btnCSVRaster" class="secundario" type="button">⬇️ Celdas con todas las variables (CSV)</button>
-            <button id="btnPNGRaster" class="secundario" type="button">🖼️ Imagen del raster con leyenda (PNG)</button>
+            <button id="btnASC" class="secundario" type="button">Raster para SIG (.asc + .prj)</button>
+            <button id="btnCSVRaster" class="secundario" type="button">Celdas con todas las variables (CSV)</button>
+            <button id="btnPNGRaster" class="secundario" type="button">Imagen del raster con leyenda (PNG)</button>
           </div>
         </div>
       </div>
@@ -350,8 +466,8 @@
   if (!window.html2canvas) faltan.push('html2canvas (imagen del mapa)');
   if (!faltan.length) return;
   const aviso = document.createElement('div');
-  aviso.style.cssText = 'background:#fff3e0;border:2px solid #ef6c00;color:#5d2c00;padding:14px 18px;margin:14px;border-radius:8px;font-size:.95rem';
-  aviso.innerHTML = `<b>⚠️ No se pudieron cargar: ${faltan.join(', ')}.</b><br>
+  aviso.style.cssText = 'background:#fff4ce;border:1px solid rgba(0,0,0,.08);color:#1b1b1b;padding:14px 18px;margin:16px 20px;border-radius:8px;font-size:.9rem;line-height:1.5';
+  aviso.innerHTML = `<b>No se pudieron cargar: ${faltan.join(', ')}.</b><br>
     El dashboard descarga estas librerías de internet al abrirse. Revisa que:<br>
     1) tengas conexión a internet; 2) no estés viendo el archivo dentro de una vista previa (GitHub, correo, Drive, un editor):
     ábrelo directamente en Chrome, Edge o Firefox, o desde tu página de GitHub Pages;
@@ -360,6 +476,14 @@
   document.body.prepend(aviso);
 })();
 if (!window.L || !window.Chart) throw new Error('Faltan librerías: revisa el aviso en la parte superior de la página.');
+
+// Estilo global de las gráficas: tipografía del sistema, textos grises y cuadrícula tenue
+Chart.defaults.font.family = '"Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif';
+Chart.defaults.font.size = 11;
+Chart.defaults.color = '#5c6670';
+Chart.defaults.borderColor = 'rgba(0, 0, 0, 0.06)';
+Chart.defaults.plugins.legend.labels.boxWidth = 10;
+Chart.defaults.plugins.legend.labels.boxHeight = 10;
 
 /* =====================================================================
    PARTE 1: EL MAPA
@@ -673,7 +797,7 @@ function elegirLugar(i) {
   limiteLugar = null;
   geoLugar = (l.geojson && /Polygon/.test(l.geojson.type)) ? l.geojson : null;   // para recortar el raster
   if (l.geojson && l.geojson.type !== 'Point') {
-    limiteLugar = L.geoJSON(l.geojson, { style: { color: '#1565c0', weight: 2, fillOpacity: 0.05 } }).addTo(mapa);
+    limiteLugar = L.geoJSON(l.geojson, { style: { color: '#003e92', weight: 2, fillColor: '#0067c0', fillOpacity: 0.06 } }).addTo(mapa);
   }
 
   // Ajustar el radio para cubrir el lugar (centro → esquina de su recuadro), entre 1 y 100 km
@@ -697,11 +821,11 @@ function dibujarClima(dias) {
     data: {
       labels: meses.map(m => m.mes),
       datasets: [
-        { type: 'bar',  label: 'Lluvia (mm)',     data: meses.map(m => m.lluvia), backgroundColor: '#90caf9', yAxisID: 'yLluvia', order: 3 },
-        { type: 'line', label: 'T media (°C)',    data: meses.map(m => m.tmed), borderColor: '#e65100', yAxisID: 'yTemp', tension: .3, pointRadius: 1 },
-        { type: 'line', label: 'T máx (°C)',      data: meses.map(m => m.tmax), borderColor: '#ef9a9a', yAxisID: 'yTemp', tension: .3, pointRadius: 0, borderDash: [4, 3] },
-        { type: 'line', label: 'T mín (°C)',      data: meses.map(m => m.tmin), borderColor: '#ffcc80', yAxisID: 'yTemp', tension: .3, pointRadius: 0, borderDash: [4, 3] },
-        { type: 'line', label: 'Humedad rel. (%)', data: meses.map(m => m.hr), borderColor: '#2e7d32', yAxisID: 'yHR', tension: .3, pointRadius: 1 }
+        { type: 'bar',  label: 'Lluvia (mm)',     data: meses.map(m => m.lluvia), backgroundColor: '#a9cdf0', yAxisID: 'yLluvia', order: 3 },
+        { type: 'line', label: 'T media (°C)',    data: meses.map(m => m.tmed), borderColor: '#c5531b', yAxisID: 'yTemp', tension: .3, pointRadius: 1 },
+        { type: 'line', label: 'T máx (°C)',      data: meses.map(m => m.tmax), borderColor: '#e9a37f', yAxisID: 'yTemp', tension: .3, pointRadius: 0, borderDash: [4, 3] },
+        { type: 'line', label: 'T mín (°C)',      data: meses.map(m => m.tmin), borderColor: '#f3cba8', yAxisID: 'yTemp', tension: .3, pointRadius: 0, borderDash: [4, 3] },
+        { type: 'line', label: 'Humedad rel. (%)', data: meses.map(m => m.hr), borderColor: '#00727f', yAxisID: 'yHR', tension: .3, pointRadius: 1 }
       ]
     },
     options: {
@@ -732,7 +856,7 @@ function dibujarAnios(facetas) {
     type: 'bar',
     data: {
       labels: datos.map(d => d.anio),
-      datasets: [{ label: 'Registros', data: datos.map(d => d.n), backgroundColor: '#66bb6a' }]
+      datasets: [{ label: 'Registros', data: datos.map(d => d.n), backgroundColor: '#0067c0', borderRadius: 3 }]
     },
     options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
   });
@@ -744,7 +868,7 @@ function dibujarNDVI(serie) {
     type: 'line',
     data: {
       labels: serie.map(s => s.fecha),
-      datasets: [{ label: 'NDVI', data: serie.map(s => s.ndvi), borderColor: '#2e7d32', tension: .3, fill: false }]
+      datasets: [{ label: 'NDVI', data: serie.map(s => s.ndvi), borderColor: '#0067c0', backgroundColor: 'rgba(0,103,192,0.08)', tension: .3, fill: true, pointRadius: 2 }]
     },
     options: { plugins: { legend: { display: false } }, scales: { y: { min: -0.2, max: 1 } } }
   });
@@ -766,7 +890,7 @@ function dibujarPuntos(registros) {
   capaPuntos.clearLayers();
   registros.forEach(r => {
     L.circleMarker([r.decimalLatitude, r.decimalLongitude], {
-      radius: 5, color: '#d84315', fillOpacity: .7, weight: 1
+      radius: 5, color: '#ffffff', weight: 1, fillColor: '#0067c0', fillOpacity: .85
     }).bindPopup(`<b><i>${r.scientificName || 'Sin nombre'}</i></b><br>
                   Fecha: ${r.eventDate ? r.eventDate.slice(0, 10) : 'N/D'}<br>
                   País: ${r.country || 'N/D'}<br>
@@ -799,7 +923,7 @@ async function consultar() {
 
   // Dibujar el área de búsqueda
   if (circulo) mapa.removeLayer(circulo);
-  circulo = L.circle([lat, lon], { radius: radio * 1000, color: '#2e7d32', fill: false }).addTo(mapa);
+  circulo = L.circle([lat, lon], { radius: radio * 1000, color: '#003e92', weight: 1.5, dashArray: '6 4', fill: false }).addTo(mapa);
   mapa.fitBounds(circulo.getBounds());
 
   mostrarEstado('Consultando GBIF y NASA…');
@@ -993,7 +1117,7 @@ function actualizarCosto() {
     `${Math.round(dias)} días · ~${Math.round(n * n * 0.8)} celdas · ≈ ${llamadas.toLocaleString('es')} llamadas a Open-Meteo ` +
     `(límite gratuito: 600 por minuto y 10.000 por día). ` +
     (minutos > 1 ? `Tardará unos ${minutos} minutos.` : 'Tardará menos de un minuto.') +
-    (llamadas > 9000 ? ' ⚠️ Supera el límite diario: reduce la resolución o el periodo.' : '');
+    (llamadas > 9000 ? ' Atención: supera el límite diario: reduce la resolución o el periodo.' : '');
 }
 ['resRaster', 'rasterDesde', 'rasterHasta'].forEach(id => document.getElementById(id).addEventListener('change', actualizarCosto));
 actualizarCosto();
@@ -1272,7 +1396,7 @@ function capasActivas() {
   const capas = [];
   const sat = document.getElementById('capa');
   if (sat.value !== 'ninguna') capas.push(`${sat.selectedOptions[0].text} (${document.getElementById('fecha').value})`);
-  if (ultimosRegistros.length) capas.push('Registros GBIF del área (puntos naranja)');
+  if (ultimosRegistros.length) capas.push('Registros GBIF del área (puntos azules)');
   if (capaRaster && mapa.hasLayer(capaRaster)) capas.push(`Raster: ${VARIABLES_RASTER[raster.variable].nombre}`);
   return capas;
 }
@@ -1324,7 +1448,7 @@ document.getElementById('btnMapaPNG').addEventListener('click', async () => {
 document.getElementById('btnReportePDF').addEventListener('click', () => {
   const ctx = contexto();
   document.getElementById('encabezadoReporte').innerHTML =
-    `<h2 style="margin:0">Dashboard ambiental – ${ctx.lugar}</h2>
+    `<h2 style="margin:0">Registros de biodiversidad y vegetación satelital – ${ctx.lugar}</h2>
      Centro: ${ctx.lat}, ${ctx.lon} · Radio: ${ctx.radio} km · Taxón: ${ctx.especie} · Años: ${ctx.anios} ·
      Clima: ${ctx.periodoClima} · Generado: ${ctx.hoy}<br>Capas: ${capasActivas().join('; ') || 'solo mapa base'}`;
   window.print();
@@ -1407,11 +1531,11 @@ function figuraClimaDiario(ctx, lugar) {
     data: {
       labels: ultimoClima.map(d => d.fecha),
       datasets: [
-        { type: 'bar', label: 'Lluvia (mm/día)', data: ultimoClima.map(d => d.lluvia), backgroundColor: '#90caf9', yAxisID: 'yL', order: 3 },
-        { type: 'line', label: 'T máx (°C)', data: ultimoClima.map(d => d.tmax), borderColor: '#ef5350', pointRadius: 0, borderWidth: 1, yAxisID: 'yT' },
-        { type: 'line', label: 'T media (°C)', data: ultimoClima.map(d => d.tmed), borderColor: '#e65100', pointRadius: 0, borderWidth: 1.5, yAxisID: 'yT' },
-        { type: 'line', label: 'T mín (°C)', data: ultimoClima.map(d => d.tmin), borderColor: '#ffb74d', pointRadius: 0, borderWidth: 1, yAxisID: 'yT' },
-        { type: 'line', label: 'HR (%)', data: ultimoClima.map(d => d.hr), borderColor: '#2e7d32', pointRadius: 0, borderWidth: 1, yAxisID: 'yH' }
+        { type: 'bar', label: 'Lluvia (mm/día)', data: ultimoClima.map(d => d.lluvia), backgroundColor: '#a9cdf0', yAxisID: 'yL', order: 3 },
+        { type: 'line', label: 'T máx (°C)', data: ultimoClima.map(d => d.tmax), borderColor: '#e9a37f', pointRadius: 0, borderWidth: 1, yAxisID: 'yT' },
+        { type: 'line', label: 'T media (°C)', data: ultimoClima.map(d => d.tmed), borderColor: '#c5531b', pointRadius: 0, borderWidth: 1.5, yAxisID: 'yT' },
+        { type: 'line', label: 'T mín (°C)', data: ultimoClima.map(d => d.tmin), borderColor: '#f3cba8', pointRadius: 0, borderWidth: 1, yAxisID: 'yT' },
+        { type: 'line', label: 'HR (%)', data: ultimoClima.map(d => d.hr), borderColor: '#00727f', pointRadius: 0, borderWidth: 1, yAxisID: 'yH' }
       ]
     },
     options: {
